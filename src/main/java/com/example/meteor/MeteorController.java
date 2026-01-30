@@ -774,7 +774,11 @@ public class MeteorController {
         if (portal != null) {
             particles.add(portal);
         }
-        return particles.isEmpty() ? List.of(Particle.SMOKE_NORMAL) : particles;
+        if (particles.isEmpty()) {
+            Particle fallback = resolveParticle("SMOKE_NORMAL", "SMOKE", "CAMPFIRE_COSY_SMOKE");
+            return fallback != null ? List.of(fallback) : List.of(Particle.FLAME);
+        }
+        return particles;
     }
 
     private Material resolveCoreMaterial() {
