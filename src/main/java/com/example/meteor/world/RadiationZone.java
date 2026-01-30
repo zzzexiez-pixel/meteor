@@ -148,16 +148,14 @@ public class RadiationZone {
 
     private boolean applyLeatherProtection(Player player) {
         ItemStack[] armor = player.getInventory().getArmorContents();
-        boolean hasLeather = false;
+        if (!hasFullLeatherSet(armor)) {
+            return false;
+        }
         for (int i = 0; i < armor.length; i++) {
             ItemStack item = armor[i];
             if (item == null || item.getType().isAir()) {
                 continue;
             }
-            if (!isLeatherArmor(item.getType())) {
-                continue;
-            }
-            hasLeather = true;
             Damageable meta = item.hasItemMeta() && item.getItemMeta() instanceof Damageable damageable ? damageable : null;
             if (meta == null) {
                 continue;
@@ -171,10 +169,23 @@ public class RadiationZone {
                 armor[i] = item;
             }
         }
-        if (hasLeather) {
-            player.getInventory().setArmorContents(armor);
+        player.getInventory().setArmorContents(armor);
+        return true;
+    }
+
+    private boolean hasFullLeatherSet(ItemStack[] armor) {
+        if (armor == null || armor.length < 4) {
+            return false;
         }
-        return hasLeather;
+        for (ItemStack item : armor) {
+            if (item == null || item.getType().isAir()) {
+                return false;
+            }
+            if (!isLeatherArmor(item.getType())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isLeatherArmor(Material material) {
