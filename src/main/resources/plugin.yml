@@ -6,7 +6,7 @@ author: OpenAI
 commands:
   admin:
     description: Административные команды
-    usage: "/admin meteor <start|stop> [x] [z]"
+    usage: "/admin meteor <start|stop> [x] [z] | /admin meteor start free [x] [z]"
     permission: meteor.admin
   radiation:
     description: Проверка радиации
