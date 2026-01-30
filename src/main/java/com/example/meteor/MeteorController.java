@@ -355,8 +355,9 @@ public class MeteorController {
                 block.setType(chosen, false);
             }
         }
+        Material coreMaterial = resolveCoreMaterial();
         Block coreBlock = world.getBlockAt(center.getBlockX(), center.getBlockY(), center.getBlockZ());
-        coreBlock.setType(Material.OBSIDIAN, false);
+        coreBlock.setType(coreMaterial, false);
         zone = zone.withCore(coreBlock.getLocation());
         storage.saveZone(zone.toStoredZone());
     }
@@ -587,6 +588,16 @@ public class MeteorController {
         if (ash != null) {
             world.spawnParticle(ash, center, 40, radius, 2.5, radius, 0.03);
         }
+        if (zone != null && zone.coreLocation() != null) {
+            Location core = zone.coreLocation();
+            List<Particle> coreParticles = resolveParticles(
+                plugin.getConfig().getStringList("meteor.core.radiation-particles"),
+                defaultCoreParticles()
+            );
+            for (Particle particle : coreParticles) {
+                world.spawnParticle(particle, core, 18, 0.6, 0.8, 0.6, 0.02);
+            }
+        }
     }
 
     private void scheduleDomeChecks() {
@@ -751,6 +762,25 @@ public class MeteorController {
             particles.add(fireworks);
         }
         return particles;
+    }
+
+    private List<Particle> defaultCoreParticles() {
+        List<Particle> particles = new ArrayList<>();
+        Particle rod = resolveParticle("END_ROD");
+        if (rod != null) {
+            particles.add(rod);
+        }
+        Particle portal = resolveParticle("PORTAL", "SPELL_WITCH");
+        if (portal != null) {
+            particles.add(portal);
+        }
+        return particles.isEmpty() ? List.of(Particle.SMOKE_NORMAL) : particles;
+    }
+
+    private Material resolveCoreMaterial() {
+        String materialName = plugin.getConfig().getString("meteor.core.block-material", "CRYING_OBSIDIAN");
+        Material material = Material.matchMaterial(materialName);
+        return material != null ? material : Material.CRYING_OBSIDIAN;
     }
 
     private Particle resolveParticle(String... names) {
