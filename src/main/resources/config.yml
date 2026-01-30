@@ -20,10 +20,10 @@ meteor:
 
   impact:
     sound: "ENTITY_GENERIC_EXPLODE"
-    explosion-power: 4.0
-    explosion-fire: false
-    explosion-break-blocks: false
-    crater-size: 5
+    explosion-power: 10.0
+    explosion-fire: true
+    explosion-break-blocks: true
+    crater-size: 9
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -32,7 +32,11 @@ meteor:
 
   core:
     display-name: "§aРадиоактивный метеорит"
+    block-material: "CRYING_OBSIDIAN"
     custom-model-data: 0
+    radiation-particles:
+      - "END_ROD"
+      - "PORTAL"
 
   radiation:
     radius: 40.0
