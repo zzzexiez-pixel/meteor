@@ -66,7 +66,7 @@ public class RadiationZone {
                 }
 
                 if (config.getBoolean("meteor.radiation.sculk.enabled", true) && elapsedSeconds % config.getInt("meteor.radiation.sculk.interval-seconds", 8) == 0) {
-                    spreadSculk(world);
+                    spreadSculk(world, calculateSculkRadius());
                 }
 
                 elapsedSeconds++;
@@ -75,8 +75,7 @@ public class RadiationZone {
         task.runTaskTimer(plugin, 0L, 20L);
     }
 
-    private void spreadSculk(World world) {
-        double radius = config.getDouble("meteor.radiation.sculk.radius", 18.0);
+    private void spreadSculk(World world, double radius) {
         int blocksPerStep = config.getInt("meteor.radiation.sculk.blocks-per-step", 6);
         List<String> replaceable = config.getStringList("meteor.radiation.sculk.replaceable-blocks");
         List<Material> replaceableMaterials = new ArrayList<>();
@@ -107,6 +106,17 @@ public class RadiationZone {
             block.setType(Material.SCULK);
             world.spawnParticle(Particle.SCULK_SOUL, block.getLocation().add(0.5, 1.0, 0.5), 6, 0.3, 0.4, 0.3, 0.01);
         }
+    }
+
+    private double calculateSculkRadius() {
+        double startRadius = config.getDouble("meteor.radiation.sculk.start-radius", 10.0);
+        double maxRadius = config.getDouble("meteor.radiation.sculk.max-radius", 24.0);
+        int growthDuration = config.getInt("meteor.radiation.sculk.grow-duration-seconds", 600);
+        if (growthDuration <= 0) {
+            return maxRadius;
+        }
+        double progress = Math.min(1.0, elapsedSeconds / (double) growthDuration);
+        return startRadius + (maxRadius - startRadius) * progress;
     }
 
     public void stop() {

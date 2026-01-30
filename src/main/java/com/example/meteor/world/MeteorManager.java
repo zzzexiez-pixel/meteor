@@ -215,6 +215,7 @@ public class MeteorManager {
 
         triggerShockwave(config, world);
         createCrater(config, world);
+        igniteCraterRim(config, world);
         shakePlayers(config, world);
 
         placeCoreBlock(config, world);
@@ -260,6 +261,8 @@ public class MeteorManager {
 
     private void createCrater(FileConfiguration config, World world) {
         int craterSize = config.getInt("meteor.impact.crater-size", 9);
+        int craterDepth = config.getInt("meteor.impact.crater-depth", craterSize + 3);
+        int craterRimHeight = config.getInt("meteor.impact.crater-rim-height", 2);
         List<String> materials = config.getStringList("meteor.impact.crater-materials");
         List<Material> craterMaterials = new ArrayList<>();
         for (String material : materials) {
@@ -283,13 +286,55 @@ public class MeteorManager {
                 if (dist > craterSize) {
                     continue;
                 }
-                int depth = (int) Math.max(1, craterSize - dist * 0.8);
-                for (int y = 0; y < depth; y++) {
+                int depth = (int) Math.max(2, craterDepth - dist * 1.1);
+                for (int y = 0; y <= depth; y++) {
                     Block block = world.getBlockAt(centerX + x, centerY - y, centerZ + z);
                     if (block.getType() == Material.BEDROCK) {
                         continue;
                     }
-                    block.setType(craterMaterials.get((x * 31 + z * 17 + y) & (craterMaterials.size() - 1)));
+                    block.setType(Material.AIR);
+                }
+                if (dist >= craterSize - 1.5) {
+                    for (int y = 0; y < craterRimHeight; y++) {
+                        Block rimBlock = world.getBlockAt(centerX + x, centerY + y, centerZ + z);
+                        if (rimBlock.getType() == Material.BEDROCK) {
+                            continue;
+                        }
+                        rimBlock.setType(craterMaterials.get((x * 31 + z * 17 + y) & (craterMaterials.size() - 1)));
+                    }
+                }
+            }
+        }
+    }
+
+    private void igniteCraterRim(FileConfiguration config, World world) {
+        int fireRadius = config.getInt("meteor.impact.fire-radius", 14);
+        double fireChance = config.getDouble("meteor.impact.fire-chance", 0.35);
+        int magmaChance = config.getInt("meteor.impact.magma-chance-percent", 12);
+        int centerX = impactLocation.getBlockX();
+        int centerY = impactLocation.getBlockY();
+        int centerZ = impactLocation.getBlockZ();
+        Random random = new Random();
+
+        for (int x = -fireRadius; x <= fireRadius; x++) {
+            for (int z = -fireRadius; z <= fireRadius; z++) {
+                double dist = Math.sqrt(x * x + z * z);
+                if (dist > fireRadius) {
+                    continue;
+                }
+                int topY = world.getHighestBlockYAt(centerX + x, centerZ + z);
+                if (topY <= world.getMinHeight()) {
+                    continue;
+                }
+                Block ground = world.getBlockAt(centerX + x, topY - 1, centerZ + z);
+                Block above = world.getBlockAt(centerX + x, topY, centerZ + z);
+                if (!above.isEmpty()) {
+                    continue;
+                }
+                if (random.nextDouble() <= fireChance) {
+                    above.setType(Material.FIRE);
+                } else if (random.nextInt(100) < magmaChance) {
+                    ground.setType(Material.MAGMA_BLOCK);
                 }
             }
         }

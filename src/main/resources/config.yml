@@ -30,9 +30,14 @@ meteor:
     shockwave-steps: 12
     shockwave-points: 40
     crater-size: 9
+    crater-depth: 12
+    crater-rim-height: 2
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
+    fire-radius: 14
+    fire-chance: 0.35
+    magma-chance-percent: 12
     shake-radius: 50.0
     shake-duration-ticks: 60
     shake-intensity: 6.0
@@ -53,7 +58,9 @@ meteor:
     sculk:
       enabled: true
       min-explosion-power: 6.0
-      radius: 18
+      start-radius: 10
+      max-radius: 24
+      grow-duration-seconds: 600
       blocks-per-step: 6
       interval-seconds: 8
       replaceable-blocks:
