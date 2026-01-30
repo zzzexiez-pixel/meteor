@@ -147,8 +147,14 @@ public class MeteorController {
         for (Particle particle : impactParticles) {
             world.spawnParticle(particle, target, 120, radius, radius, radius, 0.2);
         }
-        world.spawnParticle(Particle.EXPLOSION_HUGE, target, 4, 1.5, 1.5, 1.5, 0.1);
-        world.spawnParticle(Particle.FLASH, target, 6, 1.0, 1.0, 1.0, 0.0);
+        Particle explosionParticle = resolveParticle("EXPLOSION_HUGE", "EXPLOSION_LARGE", "EXPLOSION");
+        if (explosionParticle != null) {
+            world.spawnParticle(explosionParticle, target, 4, 1.5, 1.5, 1.5, 0.1);
+        }
+        Particle flashParticle = resolveParticle("FLASH", "EXPLOSION_NORMAL", "EXPLOSION");
+        if (flashParticle != null) {
+            world.spawnParticle(flashParticle, target, 6, 1.0, 1.0, 1.0, 0.0);
+        }
         world.playSound(target, impactSound, 2.2f, 0.65f);
         world.createExplosion(target, power, false, true);
         applyRadiation(target, explosionRadius);
@@ -226,11 +232,15 @@ public class MeteorController {
         double shakeRadius = plugin.getConfig().getDouble("meteor.shake-radius", Math.min(40.0, radius));
         int duration = plugin.getConfig().getInt("meteor.shake-duration-ticks", 20);
         int amplifier = plugin.getConfig().getInt("meteor.shake-amplifier", 0);
+        PotionEffectType shakeEffect = resolvePotionEffectType("CONFUSION", "NAUSEA");
+        if (shakeEffect == null) {
+            return;
+        }
         for (Player player : world.getPlayers()) {
             if (player.getLocation().distanceSquared(location) > shakeRadius * shakeRadius) {
                 continue;
             }
-            player.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, duration, amplifier, true, false, false));
+            player.addPotionEffect(new PotionEffect(shakeEffect, duration, amplifier, true, false, false));
         }
     }
 
@@ -290,7 +300,18 @@ public class MeteorController {
                         damageLeatherArmor(player, durabilityLoss);
                     }
                     player.damage(damage);
-                    player.spawnParticle(Particle.SPELL_MOB_AMBIENT, player.getLocation().add(0, 1.0, 0), 8, 0.4, 0.6, 0.4, 0.01);
+                    Particle ambientParticle = resolveParticle("SPELL_MOB_AMBIENT", "SPELL_MOB", "AMBIENT_ENTITY_EFFECT");
+                    if (ambientParticle != null) {
+                        player.spawnParticle(
+                            ambientParticle,
+                            player.getLocation().add(0, 1.0, 0),
+                            8,
+                            0.4,
+                            0.6,
+                            0.4,
+                            0.01
+                        );
+                    }
                 }
                 ticks++;
             }
@@ -368,5 +389,15 @@ public class MeteorController {
         } catch (IllegalArgumentException ex) {
             return Sound.ENTITY_GENERIC_EXPLODE;
         }
+    }
+
+    private PotionEffectType resolvePotionEffectType(String... names) {
+        for (String name : names) {
+            PotionEffectType effectType = PotionEffectType.getByName(name);
+            if (effectType != null) {
+                return effectType;
+            }
+        }
+        return null;
     }
 }
