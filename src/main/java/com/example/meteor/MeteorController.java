@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.bukkit.Color;
@@ -32,6 +33,7 @@ public class MeteorController {
     private BukkitRunnable activeTask;
     private UUID armorStandId;
     private final List<UUID> displayIds = new ArrayList<>();
+    private final Random random = new Random();
 
     public MeteorController(MeteorPlugin plugin) {
         this.plugin = plugin;
@@ -157,6 +159,8 @@ public class MeteorController {
         }
         world.playSound(target, impactSound, 2.2f, 0.65f);
         world.createExplosion(target, power, false, true);
+        createImpactRuins(target);
+        applyImpactShake(world, target);
         applyRadiation(target, explosionRadius);
     }
 
@@ -177,7 +181,8 @@ public class MeteorController {
             );
         }
         world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, location, 2, radius * 0.3, 0.5, radius * 0.3, 0.02);
-        world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, location, 4, radius * 0.4, 0.4, radius * 0.4, 0.01);
+        world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, location, 6, radius * 0.5, 0.5, radius * 0.5, 0.01);
+        world.spawnParticle(Particle.LAVA, location, 2, radius * 0.2, 0.2, radius * 0.2, 0.01);
     }
 
     private void spawnMeteorDisplays(World world, Location location, Material material) {
@@ -185,6 +190,8 @@ public class MeteorController {
         displays.add(createBlockDisplay(world, location, material, 1.0f));
         displays.add(createBlockDisplay(world, location.clone().add(0.6, 0.2, 0.3), material, 0.7f));
         displays.add(createBlockDisplay(world, location.clone().add(-0.5, -0.1, -0.4), material, 0.6f));
+        displays.add(createBlockDisplay(world, location.clone().add(0.2, -0.4, 0.6), material, 0.5f));
+        displays.add(createBlockDisplay(world, location.clone().add(-0.7, 0.3, 0.1), material, 0.4f));
         for (BlockDisplay display : displays) {
             display.setGlowing(true);
         }
@@ -244,6 +251,23 @@ public class MeteorController {
         }
     }
 
+    private void applyImpactShake(World world, Location location) {
+        FileConfiguration config = plugin.getConfig();
+        double shakeRadius = config.getDouble("meteor.impact-shake-radius", 80.0);
+        int duration = config.getInt("meteor.impact-shake-duration-ticks", 60);
+        int amplifier = config.getInt("meteor.impact-shake-amplifier", 1);
+        PotionEffectType shakeEffect = resolvePotionEffectType("CONFUSION", "NAUSEA");
+        if (shakeEffect == null) {
+            return;
+        }
+        for (Player player : world.getPlayers()) {
+            if (player.getLocation().distanceSquared(location) > shakeRadius * shakeRadius) {
+                continue;
+            }
+            player.addPotionEffect(new PotionEffect(shakeEffect, duration, amplifier, true, false, false));
+        }
+    }
+
     private void applyFlashBlindness(World world, Location location, ArmorStand stand, double radius) {
         double flashRadius = plugin.getConfig().getDouble("meteor.flash-radius", radius);
         int duration = plugin.getConfig().getInt("meteor.flash-duration-ticks", 60);
@@ -286,6 +310,10 @@ public class MeteorController {
                     cancel();
                     return;
                 }
+                Particle radiationParticle = resolveParticle("SPELL_MOB_AMBIENT", "SPELL_MOB", "AMBIENT_ENTITY_EFFECT");
+                if (radiationParticle != null) {
+                    world.spawnParticle(radiationParticle, target, 12, 0.6, 0.8, 0.6, 0.02);
+                }
                 for (Player player : world.getPlayers()) {
                     double distanceSquared = player.getLocation().distanceSquared(target);
                     if (distanceSquared > radiusSquared) {
@@ -300,10 +328,9 @@ public class MeteorController {
                         damageLeatherArmor(player, durabilityLoss);
                     }
                     player.damage(damage);
-                    Particle ambientParticle = resolveParticle("SPELL_MOB_AMBIENT", "SPELL_MOB", "AMBIENT_ENTITY_EFFECT");
-                    if (ambientParticle != null) {
+                    if (radiationParticle != null) {
                         player.spawnParticle(
-                            ambientParticle,
+                            radiationParticle,
                             player.getLocation().add(0, 1.0, 0),
                             8,
                             0.4,
@@ -316,6 +343,53 @@ public class MeteorController {
                 ticks++;
             }
         }.runTaskTimer(plugin, 0L, 20L);
+    }
+
+    private void createImpactRuins(Location target) {
+        World world = target.getWorld();
+        if (world == null) {
+            return;
+        }
+        FileConfiguration config = plugin.getConfig();
+        int ruinRadius = config.getInt("meteor.ruin-radius", 12);
+        int craterRadius = config.getInt("meteor.crater-radius", 6);
+        int craterDepth = config.getInt("meteor.crater-depth", 3);
+        int bedrockRadius = config.getInt("meteor.bedrock-radius", 1);
+        List<Material> ruinMaterials = resolveMaterials(
+            config.getStringList("meteor.ruin-blocks"),
+            List.of(Material.NETHERRACK, Material.COBBLESTONE, Material.MAGMA_BLOCK, Material.BLACKSTONE)
+        );
+
+        for (int x = -ruinRadius; x <= ruinRadius; x++) {
+            for (int z = -ruinRadius; z <= ruinRadius; z++) {
+                double distance = Math.sqrt(x * x + z * z);
+                Location base = target.clone().add(x, 0, z);
+                if (distance <= bedrockRadius) {
+                    world.getBlockAt(base).setType(Material.BEDROCK, false);
+                    continue;
+                }
+                if (distance <= craterRadius) {
+                    carveCraterColumn(world, base, craterDepth);
+                    continue;
+                }
+                if (distance <= ruinRadius && random.nextDouble() < 0.35) {
+                    Material chosen = ruinMaterials.get(random.nextInt(ruinMaterials.size()));
+                    world.getBlockAt(base).setType(chosen, false);
+                    if (random.nextDouble() < 0.2) {
+                        world.getBlockAt(base.clone().add(0, 1, 0)).setType(chosen, false);
+                    }
+                }
+            }
+        }
+    }
+
+    private void carveCraterColumn(World world, Location base, int depth) {
+        for (int y = 0; y <= depth; y++) {
+            world.getBlockAt(base.clone().add(0, -y, 0)).setType(Material.AIR, false);
+        }
+        if (random.nextDouble() < 0.4) {
+            world.getBlockAt(base.clone().add(0, -depth - 1, 0)).setType(Material.MAGMA_BLOCK, false);
+        }
     }
 
     private double calculateLeatherReduction(Player player, double reductionPerPiece) {
@@ -370,6 +444,14 @@ public class MeteorController {
             })
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
+    }
+
+    private List<Material> resolveMaterials(List<String> names, List<Material> fallback) {
+        List<Material> materials = names.stream()
+            .map(name -> Material.matchMaterial(name))
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+        return materials.isEmpty() ? fallback : materials;
     }
 
     private Particle resolveParticle(String... names) {

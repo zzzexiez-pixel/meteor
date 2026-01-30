@@ -1,6 +1,6 @@
 meteor:
   height: 60
-  fall-duration-ticks: 80
+  fall-duration-ticks: 1200
   radius: 2.0
   block: "NETHERITE_BLOCK"
   trail-particles:
@@ -12,15 +12,27 @@ meteor:
     - "EXPLOSION"
     - "CAMPFIRE_COSY_SMOKE"
   impact-sound: "ENTITY_GENERIC_EXPLODE"
-  impact-power: 12.0
+  impact-power: 20.0
   explosion-radius: 100.0
   falling-sound: "ENTITY_PHANTOM_FLAP"
   shake-radius: 40.0
   shake-duration-ticks: 20
   shake-amplifier: 0
+  impact-shake-radius: 80.0
+  impact-shake-duration-ticks: 60
+  impact-shake-amplifier: 1
   flash-radius: 80.0
   flash-duration-ticks: 60
   flash-dot-threshold: 0.85
+  ruin-radius: 14
+  crater-radius: 6
+  crater-depth: 3
+  bedrock-radius: 1
+  ruin-blocks:
+    - "NETHERRACK"
+    - "COBBLESTONE"
+    - "MAGMA_BLOCK"
+    - "BLACKSTONE"
   radiation:
     duration-seconds: 12
     max-damage: 10.0
