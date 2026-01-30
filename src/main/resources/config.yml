@@ -6,8 +6,24 @@ meteor:
   trail-particles:
     - "FLAME"
     - "SMOKE_LARGE"
+    - "CAMPFIRE_SIGNAL_SMOKE"
+    - "CAMPFIRE_COSY_SMOKE"
   impact-particles:
     - "EXPLOSION"
     - "CAMPFIRE_COSY_SMOKE"
   impact-sound: "ENTITY_GENERIC_EXPLODE"
-  impact-power: 0.0
+  impact-power: 12.0
+  explosion-radius: 100.0
+  falling-sound: "ENTITY_PHANTOM_FLAP"
+  shake-radius: 40.0
+  shake-duration-ticks: 20
+  shake-amplifier: 0
+  flash-radius: 80.0
+  flash-duration-ticks: 60
+  flash-dot-threshold: 0.85
+  radiation:
+    duration-seconds: 12
+    max-damage: 10.0
+    min-damage: 1.0
+    leather-reduction: 0.15
+    armor-durability-loss: 1
