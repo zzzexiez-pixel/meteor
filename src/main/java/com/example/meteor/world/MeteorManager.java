@@ -214,7 +214,7 @@ public class MeteorManager {
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 world.strikeLightningEffect(impactLocation);
                 world.spawnParticle(Particle.FLASH, impactLocation, 1);
-                world.spawnParticle(Particle.EXPLOSION_HUGE, impactLocation, 1);
+                world.spawnParticle(Particle.EXPLOSION_LARGE, impactLocation, 1);
                 world.playSound(impactLocation, flashSound, 2.5f, 1.2f);
                 for (Player player : world.getPlayers()) {
                     if (player.getLocation().distanceSquared(impactLocation) <= flashRadius * flashRadius) {
