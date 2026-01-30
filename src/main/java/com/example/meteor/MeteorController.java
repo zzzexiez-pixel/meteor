@@ -1,512 +1,643 @@
 package com.example.meteor;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
-import java.util.Random;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
-import org.bukkit.Color;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.entity.BlockDisplay;
-import org.bukkit.entity.ArmorStand;
+import org.bukkit.block.Block;
+import org.bukkit.command.CommandSender;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.DragonFireball;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.LeatherArmorMeta;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
-import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.util.Transformation;
-import org.joml.Vector3f;
-import org.joml.Quaternionf;
+import net.kyori.adventure.text.Component;
 
 public class MeteorController {
     private final MeteorPlugin plugin;
-    private BukkitRunnable activeTask;
-    private UUID armorStandId;
-    private final List<DisplayShard> displayShards = new ArrayList<>();
-    private final Random random = new Random();
+    private final MeteorStorage storage;
+    private final Map<UUID, Integer> radiationLevels = new HashMap<>();
+    private final Map<UUID, Integer> damageCounterFive = new HashMap<>();
+    private final Map<UUID, Integer> damageCounterThree = new HashMap<>();
+    private final List<BukkitTask> scheduledTasks = new ArrayList<>();
 
-    public MeteorController(MeteorPlugin plugin) {
+    private MeteorZone zone;
+    private BukkitRunnable flightTask;
+    private BukkitRunnable exposureTask;
+    private BukkitRunnable damageTask;
+    private BukkitRunnable visualTask;
+    private BukkitRunnable domeTask;
+    private List<Vector> domeOffsets;
+
+    public MeteorController(MeteorPlugin plugin, MeteorStorage storage) {
         this.plugin = plugin;
+        this.storage = storage;
+        this.radiationLevels.putAll(storage.loadRadiationLevels());
+        resumeZone();
     }
 
-    public void start(Location target) {
-        stop();
+    public void startMeteor(Location target, boolean immediate) {
+        stopMeteor();
 
-        FileConfiguration config = plugin.getConfig();
         World world = target.getWorld();
         if (world == null) {
             return;
         }
+        int highestY = world.getHighestBlockYAt(target.getBlockX(), target.getBlockZ());
+        Location center = new Location(world, target.getX(), highestY, target.getZ());
 
-        int height = config.getInt("meteor.height", 60);
-        int duration = config.getInt("meteor.fall-duration-ticks", 80);
-        double radius = config.getDouble("meteor.radius", 2.0);
-        Material blockMaterial = Material.matchMaterial(config.getString("meteor.block", "NETHERITE_BLOCK"));
-        if (blockMaterial == null) {
-            blockMaterial = Material.NETHERITE_BLOCK;
+        long now = System.currentTimeMillis();
+        int countdownMinutes = plugin.getConfig().getInt("meteor.countdown-minutes", 60);
+        long countdownMillis = immediate ? 0 : countdownMinutes * 60L * 1000L;
+        long impactTime = now + countdownMillis;
+
+        zone = new MeteorZone(center, impactTime, Stage.SCHEDULED, false, null);
+        storage.saveZone(zone.toStoredZone());
+
+        broadcastWarning(center, countdownMinutes, immediate);
+
+        if (!immediate) {
+            scheduleCountdowns(center, impactTime);
         }
+        scheduleFlight(center, impactTime, immediate);
+    }
 
-        Location startLocation = target.clone().add(0, height, 0);
-        ArmorStand stand = (ArmorStand) world.spawnEntity(startLocation, EntityType.ARMOR_STAND);
-        stand.setInvisible(true);
-        stand.setMarker(true);
-        stand.setGravity(false);
-        stand.setInvulnerable(true);
-        stand.getEquipment().setHelmet(createMeteorHelmet(blockMaterial));
-        armorStandId = stand.getUniqueId();
+    public void stopMeteor() {
+        cancelTasks();
+        removeCoreBlock();
+        zone = null;
+        storage.clearZone();
+    }
 
-        spawnMeteorDisplays(world, startLocation, blockMaterial);
+    public boolean checkDome(CommandSender sender) {
+        if (zone == null || zone.stage().compareTo(Stage.IMPACTED) < 0 || zone.safe()) {
+            return false;
+        }
+        boolean complete = isDomeComplete(zone.center());
+        if (complete) {
+            sealRadiation();
+            if (sender != null) {
+                sender.sendMessage("§aРадиация изолирована!");
+            }
+        }
+        return complete;
+    }
 
-        List<Particle> trailParticles = resolveParticles(config.getStringList("meteor.trail-particles"));
-        List<Particle> impactParticles = resolveParticles(config.getStringList("meteor.impact-particles"));
-        Sound impactSound = resolveSound(config.getString("meteor.impact-sound", "ENTITY_GENERIC_EXPLODE"));
-        float impactPower = (float) config.getDouble("meteor.impact-power", 12.0);
-        float explosionRadius = (float) config.getDouble("meteor.explosion-radius", 100.0);
-        Sound fallingSound = resolveSound(config.getString("meteor.falling-sound", "ENTITY_PHANTOM_FLAP"));
+    public Location getCoreLocation() {
+        return zone == null ? null : zone.coreLocation();
+    }
 
-        Vector step = target.toVector().subtract(startLocation.toVector()).multiply(1.0 / duration);
+    public boolean isMeteorSafe() {
+        return zone != null && zone.safe();
+    }
 
-        activeTask = new BukkitRunnable() {
-            int ticks = 0;
+    public boolean canHarvestMeteor(Player player) {
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        return tool != null && tool.containsEnchantment(Enchantment.SILK_TOUCH);
+    }
+
+    public void handleMeteorHarvest(org.bukkit.event.block.BlockBreakEvent event) {
+        Location core = zone == null ? null : zone.coreLocation();
+        if (core == null) {
+            return;
+        }
+        event.setCancelled(true);
+        event.getBlock().setType(Material.AIR, false);
+        ItemStack drop = createCoreItem();
+        core.getWorld().dropItemNaturally(core, drop);
+    }
+
+    public void handleRadiationDeath(Player player) {
+        if (zone == null || zone.stage() == Stage.SEALED) {
+            return;
+        }
+        Integer level = radiationLevels.get(player.getUniqueId());
+        if (level == null || level < 3) {
+            return;
+        }
+        Location location = player.getLocation();
+        if (location.getWorld() == null || zone.center().getWorld() == null) {
+            return;
+        }
+        if (!location.getWorld().equals(zone.center().getWorld())) {
+            return;
+        }
+        double radius = plugin.getConfig().getDouble("meteor.radiation.radius", 40.0);
+        if (location.distanceSquared(zone.center()) > radius * radius) {
+            return;
+        }
+        var zombie = location.getWorld().spawnEntity(location, EntityType.ZOMBIE);
+        zombie.customName(Component.text("Заражённый зомби"));
+        zombie.setCustomNameVisible(true);
+    }
+
+    private void resumeZone() {
+        Optional<MeteorStorage.StoredZone> stored = storage.loadZone();
+        if (stored.isEmpty()) {
+            return;
+        }
+        MeteorStorage.StoredZone data = stored.get();
+        World world = Bukkit.getWorld(data.world());
+        if (world == null) {
+            return;
+        }
+        Location center = new Location(world, data.x(), data.y(), data.z());
+        Stage stage = Stage.fromString(data.stage());
+        Location core = stage == Stage.IMPACTED || stage == Stage.SEALED ? center : null;
+        zone = new MeteorZone(center, data.impactTime(), stage, stage == Stage.SEALED, core);
+        long now = System.currentTimeMillis();
+        if (stage == Stage.SCHEDULED || stage == Stage.FALLING) {
+            if (now >= data.impactTime()) {
+                impact(center);
+            } else {
+                scheduleCountdowns(center, data.impactTime());
+                scheduleFlight(center, data.impactTime(), false);
+            }
+        } else if (stage == Stage.IMPACTED) {
+            startRadiationTasks();
+            scheduleDomeChecks();
+        }
+    }
+
+    private void broadcastWarning(Location center, int countdownMinutes, boolean immediate) {
+        String title = plugin.getConfig().getString("meteor.warning-title", "§6☄ Метеорит приближается!");
+        String subtitleTemplate = plugin.getConfig().getString(
+            "meteor.warning-subtitle",
+            "Падение через %time% в районе X:%x% Z:%z%"
+        );
+        String timeText = immediate ? "10 секунд" : formatCountdown(countdownMinutes);
+        String subtitle = subtitleTemplate
+            .replace("%time%", timeText)
+            .replace("%x%", String.valueOf(center.getBlockX()))
+            .replace("%z%", String.valueOf(center.getBlockZ()));
+
+        String chatMessage = title + " " + subtitle;
+        Bukkit.broadcastMessage(chatMessage);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.sendTitle(title, subtitle, 10, 80, 20);
+        }
+    }
+
+    private void scheduleCountdowns(Location center, long impactTime) {
+        List<Integer> reminderMinutes = plugin.getConfig().getIntegerList("meteor.reminder-times-minutes");
+        if (reminderMinutes.isEmpty()) {
+            reminderMinutes = List.of(45, 30, 15, 5);
+        }
+        long now = System.currentTimeMillis();
+        for (int minutes : reminderMinutes) {
+            long reminderTime = impactTime - minutes * 60L * 1000L;
+            long delayTicks = Math.max(0, (reminderTime - now) / 50L);
+            if (delayTicks <= 0) {
+                continue;
+            }
+            BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                String message = "§6☄ До падения метеорита: " + minutes + " мин. (X:" +
+                    center.getBlockX() + ", Z:" + center.getBlockZ() + ")";
+                Bukkit.broadcastMessage(message);
+            }, delayTicks);
+            scheduledTasks.add(task);
+        }
+    }
+
+    private void scheduleFlight(Location center, long impactTime, boolean immediate) {
+        int flightSeconds = plugin.getConfig().getInt("meteor.flight.duration-seconds", 10);
+        long flightMillis = flightSeconds * 1000L;
+        long now = System.currentTimeMillis();
+        long startMillis = immediate ? now : Math.max(now, impactTime - flightMillis);
+        long delayTicks = Math.max(0, (startMillis - now) / 50L);
+        BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> startFlight(center), delayTicks);
+        scheduledTasks.add(task);
+    }
+
+    private void startFlight(Location center) {
+        if (zone == null) {
+            return;
+        }
+        zone = zone.withStage(Stage.FALLING);
+        storage.saveZone(zone.toStoredZone());
+
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        int flightHeight = plugin.getConfig().getInt("meteor.flight.height", 200);
+        int flightSeconds = plugin.getConfig().getInt("meteor.flight.duration-seconds", 10);
+        int totalTicks = Math.max(1, flightSeconds * 20);
+
+        Location start = new Location(world, center.getX(), flightHeight, center.getZ());
+        DragonFireball fireball = (DragonFireball) world.spawnEntity(start, EntityType.DRAGON_FIREBALL);
+        fireball.setIsIncendiary(false);
+        fireball.setYield(0);
+
+        Vector step = center.toVector().subtract(start.toVector()).multiply(1.0 / totalTicks);
+
+        List<Particle> trailParticles = resolveParticles(
+            plugin.getConfig().getStringList("meteor.flight.trail-particles"),
+            List.of(Particle.FLAME, Particle.SMOKE_LARGE, Particle.FIREWORKS_SPARK)
+        );
+        Sound whistle = resolveSound(plugin.getConfig().getString("meteor.flight.whistle-sound", "ENTITY_ARROW_SHOOT"));
+        int flashHeight = plugin.getConfig().getInt("meteor.flight.flash-y", 100);
+
+        flightTask = new BukkitRunnable() {
+            int tick = 0;
+            boolean flashed = false;
 
             @Override
             public void run() {
-                if (!stand.isValid()) {
+                if (!fireball.isValid()) {
                     cancel();
                     return;
                 }
-
-                if (ticks >= duration) {
-                    onImpact(target, impactParticles, impactSound, impactPower, radius, explosionRadius);
-                    stand.remove();
-                    removeDisplays();
+                if (tick >= totalTicks) {
+                    fireball.remove();
                     cancel();
+                    impact(center);
                     return;
                 }
-
-                Location current = stand.getLocation().add(step);
-                stand.teleport(current);
-                moveDisplays(current, ticks);
-                spawnTrailParticles(world, current, radius, trailParticles);
-                applyScreenShake(world, current, explosionRadius);
-                if (ticks % 10 == 0) {
-                    world.playSound(current, fallingSound, 1.2f, 0.8f);
+                Location current = fireball.getLocation().add(step);
+                fireball.teleport(current);
+                spawnTrail(world, current, trailParticles);
+                float pitch = 0.5f + (1.5f * tick / totalTicks);
+                world.playSound(current, whistle, 1.2f, pitch);
+                if (!flashed && current.getY() < flashHeight) {
+                    Particle flash = resolveParticle("FLASH", "EXPLOSION_NORMAL", "EXPLOSION");
+                    if (flash != null) {
+                        world.spawnParticle(flash, current, 4, 0.6, 0.6, 0.6, 0.0);
+                    }
+                    flashed = true;
                 }
-                if (ticks % 4 == 0) {
-                    applyFlashBlindness(world, current, stand, explosionRadius);
-                }
-                ticks++;
+                tick++;
             }
 
             @Override
             public void cancel() {
                 super.cancel();
-                activeTask = null;
-                armorStandId = null;
-                removeDisplays();
+                flightTask = null;
             }
         };
-        activeTask.runTaskTimer(plugin, 0L, 1L);
+        flightTask.runTaskTimer(plugin, 0L, 1L);
     }
 
-    public void stop() {
-        if (activeTask != null) {
-            activeTask.cancel();
-            activeTask = null;
+    private void impact(Location center) {
+        if (zone == null) {
+            return;
         }
-        if (armorStandId != null) {
-            var entity = plugin.getServer().getEntity(armorStandId);
-            if (entity != null) {
-                entity.remove();
-            }
-            armorStandId = null;
-        }
-        removeDisplays();
-    }
+        zone = zone.withStage(Stage.IMPACTED);
+        storage.saveZone(zone.toStoredZone());
 
-    private void onImpact(
-        Location target,
-        List<Particle> impactParticles,
-        Sound impactSound,
-        float power,
-        double radius,
-        float explosionRadius
-    ) {
-        World world = target.getWorld();
+        World world = center.getWorld();
         if (world == null) {
             return;
         }
-        for (Particle particle : impactParticles) {
-            world.spawnParticle(particle, target, 120, radius, radius, radius, 0.2);
+        Sound impactSound = resolveSound(plugin.getConfig().getString("meteor.impact.sound", "ENTITY_GENERIC_EXPLODE"));
+        world.playSound(center, impactSound, 2.0f, 0.8f);
+        Particle explosion = resolveParticle("EXPLOSION", "EXPLOSION_HUGE", "EXPLOSION_LARGE");
+        if (explosion != null) {
+            world.spawnParticle(explosion, center, 8, 1.5, 1.5, 1.5, 0.1);
         }
-        Particle explosionParticle = resolveParticle("EXPLOSION_HUGE", "EXPLOSION_LARGE", "EXPLOSION");
-        if (explosionParticle != null) {
-            world.spawnParticle(explosionParticle, target, 4, 1.5, 1.5, 1.5, 0.1);
-        }
-        Particle flashParticle = resolveParticle("FLASH", "EXPLOSION_NORMAL", "EXPLOSION");
-        if (flashParticle != null) {
-            world.spawnParticle(flashParticle, target, 6, 1.0, 1.0, 1.0, 0.0);
-        }
-        world.playSound(target, impactSound, 2.2f, 0.65f);
-        world.createExplosion(target, power, false, true);
-        createImpactRuins(target);
-        applyImpactShake(world, target);
-        applyRadiation(target, explosionRadius);
+
+        createCrater(center);
+        applyImpactShake(center);
+        startRadiationTasks();
+        scheduleDomeChecks();
     }
 
-    private void spawnTrailParticles(World world, Location location, double radius, List<Particle> particles) {
-        for (Particle particle : particles) {
-            world.spawnParticle(particle, location, 8, radius * 0.5, radius * 0.5, radius * 0.5, 0.01);
+    private void createCrater(Location center) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
         }
-        Particle ashParticle = resolveParticle("ASH", "SMOKE_NORMAL");
-        if (ashParticle != null) {
-            world.spawnParticle(ashParticle, location, 12, radius * 0.6, 0.6, radius * 0.6, 0.01);
-        }
-        Particle dustParticle = resolveParticle("REDSTONE", "DUST");
-        if (dustParticle != null) {
-            world.spawnParticle(
-                dustParticle,
-                location,
-                2,
-                0.2,
-                0.2,
-                0.2,
-                new Particle.DustOptions(Color.ORANGE, 1.6f)
-            );
-        }
-        world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, location, 2, radius * 0.3, 0.5, radius * 0.3, 0.02);
-        world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, location, 6, radius * 0.5, 0.5, radius * 0.5, 0.01);
-        world.spawnParticle(Particle.LAVA, location, 2, radius * 0.2, 0.2, radius * 0.2, 0.01);
-        Particle sparks = resolveParticle("FIREWORKS_SPARK", "FIREWORK", "CRIT");
-        if (sparks != null) {
-            world.spawnParticle(sparks, location, 10, radius * 0.4, 0.4, radius * 0.4, 0.05);
-        }
-    }
-
-    private void spawnMeteorDisplays(World world, Location location, Material material) {
-        displayShards.clear();
-        List<Vector> offsets = List.of(
-            new Vector(0.0, 0.0, 0.0),
-            new Vector(0.7, 0.2, 0.4),
-            new Vector(-0.6, -0.1, -0.5),
-            new Vector(0.3, -0.5, 0.6),
-            new Vector(-0.8, 0.3, 0.2),
-            new Vector(0.4, 0.6, -0.3),
-            new Vector(-0.4, 0.5, 0.7),
-            new Vector(0.9, -0.3, -0.2)
+        int size = plugin.getConfig().getInt("meteor.impact.crater-size", 5);
+        int half = size / 2;
+        List<Material> materials = resolveMaterials(
+            plugin.getConfig().getStringList("meteor.impact.crater-materials"),
+            List.of(Material.OBSIDIAN, Material.CRYING_OBSIDIAN)
         );
-        for (int i = 0; i < offsets.size(); i++) {
-            float scale = 1.0f - (i * 0.08f);
-            BlockDisplay display = createBlockDisplay(world, location.clone().add(offsets.get(i)), material, scale);
-            display.setGlowing(true);
-            displayShards.add(new DisplayShard(
-                display.getUniqueId(),
-                offsets.get(i),
-                0.06f + (random.nextFloat() * 0.04f),
-                0.12f + (random.nextFloat() * 0.1f),
-                0.12f + (random.nextFloat() * 0.08f),
-                random.nextInt(360)
-            ));
+        for (int x = -half; x <= half; x++) {
+            for (int z = -half; z <= half; z++) {
+                Block block = world.getBlockAt(center.getBlockX() + x, center.getBlockY(), center.getBlockZ() + z);
+                Material chosen = materials.get((int) (Math.random() * materials.size()));
+                block.setType(chosen, false);
+            }
         }
+        Block coreBlock = world.getBlockAt(center.getBlockX(), center.getBlockY(), center.getBlockZ());
+        coreBlock.setType(Material.OBSIDIAN, false);
+        zone = zone.withCore(coreBlock.getLocation());
+        storage.saveZone(zone.toStoredZone());
     }
 
-    private BlockDisplay createBlockDisplay(World world, Location location, Material material, float scale) {
-        BlockDisplay display = (BlockDisplay) world.spawnEntity(location, EntityType.BLOCK_DISPLAY);
-        display.setBlock(material.createBlockData());
-        display.setShadowRadius(scale * 0.4f);
-        display.setShadowStrength(0.6f);
-        display.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
-        Transformation transformation = display.getTransformation();
-        transformation.getScale().set(new Vector3f(scale, scale, scale));
-        transformation.getLeftRotation().set(new Quaternionf().rotationXYZ(
-            random.nextFloat(),
-            random.nextFloat(),
-            random.nextFloat()
-        ));
-        display.setTransformation(transformation);
-        return display;
-    }
-
-    private void moveDisplays(Location location, int ticks) {
-        if (displayShards.isEmpty()) {
+    private void startRadiationTasks() {
+        if (zone == null) {
             return;
         }
-        for (DisplayShard shard : displayShards) {
-            var entity = plugin.getServer().getEntity(shard.id());
-            if (entity instanceof BlockDisplay display) {
-                double wobble = Math.sin((ticks + shard.phase()) * shard.wobbleSpeed()) * shard.wobbleAmplitude();
-                Location adjusted = location.clone().add(
-                    shard.offset().getX(),
-                    shard.offset().getY() + wobble,
-                    shard.offset().getZ()
-                );
-                display.teleport(adjusted);
-                float angle = (ticks + shard.phase()) * shard.spinSpeed();
-                Transformation transformation = display.getTransformation();
-                transformation.getLeftRotation().set(new Quaternionf().rotationXYZ(angle, angle * 0.7f, angle * 0.4f));
-                display.setTransformation(transformation);
-            }
-        }
-    }
+        cancelRadiationTasks();
+        double radius = plugin.getConfig().getDouble("meteor.radiation.radius", 40.0);
+        int exposureSeconds = plugin.getConfig().getInt("meteor.radiation.progression-seconds", 20);
+        int damageIntervalFive = plugin.getConfig().getInt("meteor.radiation.damage-half-heart-interval", 5);
+        int damageIntervalThree = plugin.getConfig().getInt("meteor.radiation.damage-heart-interval", 3);
 
-    private void removeDisplays() {
-        for (DisplayShard shard : displayShards) {
-            var entity = plugin.getServer().getEntity(shard.id());
-            if (entity != null) {
-                entity.remove();
-            }
-        }
-        displayShards.clear();
-    }
-
-    private void applyScreenShake(World world, Location location, double radius) {
-        double shakeRadius = plugin.getConfig().getDouble("meteor.shake-radius", Math.min(40.0, radius));
-        int duration = plugin.getConfig().getInt("meteor.shake-duration-ticks", 20);
-        int amplifier = plugin.getConfig().getInt("meteor.shake-amplifier", 0);
-        PotionEffectType shakeEffect = resolvePotionEffectType("CONFUSION", "NAUSEA");
-        if (shakeEffect == null) {
-            return;
-        }
-        for (Player player : world.getPlayers()) {
-            if (player.getLocation().distanceSquared(location) > shakeRadius * shakeRadius) {
-                continue;
-            }
-            player.addPotionEffect(new PotionEffect(shakeEffect, duration, amplifier, true, false, false));
-        }
-    }
-
-    private void applyImpactShake(World world, Location location) {
-        FileConfiguration config = plugin.getConfig();
-        double shakeRadius = config.getDouble("meteor.impact-shake-radius", 80.0);
-        int duration = config.getInt("meteor.impact-shake-duration-ticks", 60);
-        int amplifier = config.getInt("meteor.impact-shake-amplifier", 1);
-        PotionEffectType shakeEffect = resolvePotionEffectType("CONFUSION", "NAUSEA");
-        if (shakeEffect == null) {
-            return;
-        }
-        for (Player player : world.getPlayers()) {
-            if (player.getLocation().distanceSquared(location) > shakeRadius * shakeRadius) {
-                continue;
-            }
-            player.addPotionEffect(new PotionEffect(shakeEffect, duration, amplifier, true, false, false));
-        }
-    }
-
-    private void applyFlashBlindness(World world, Location location, ArmorStand stand, double radius) {
-        double flashRadius = plugin.getConfig().getDouble("meteor.flash-radius", radius);
-        int duration = plugin.getConfig().getInt("meteor.flash-duration-ticks", 60);
-        double dotThreshold = plugin.getConfig().getDouble("meteor.flash-dot-threshold", 0.85);
-        for (Player player : world.getPlayers()) {
-            if (player.getLocation().distanceSquared(location) > flashRadius * flashRadius) {
-                continue;
-            }
-            if (!player.hasLineOfSight(stand)) {
-                continue;
-            }
-            Vector toMeteor = location.clone().add(0, 1.0, 0).toVector().subtract(player.getEyeLocation().toVector()).normalize();
-            Vector view = player.getEyeLocation().getDirection().normalize();
-            if (view.dot(toMeteor) < dotThreshold) {
-                continue;
-            }
-            player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, duration, 1, true, false, true));
-        }
-    }
-
-    private void applyRadiation(Location target, double radius) {
-        World world = target.getWorld();
-        if (world == null) {
-            return;
-        }
-        FileConfiguration config = plugin.getConfig();
-        int durationSeconds = config.getInt("meteor.radiation.duration-seconds", 12);
-        double maxDamage = config.getDouble("meteor.radiation.max-damage", 10.0);
-        double minDamage = config.getDouble("meteor.radiation.min-damage", 1.0);
-        double leatherReduction = config.getDouble("meteor.radiation.leather-reduction", 0.15);
-        int durabilityLoss = config.getInt("meteor.radiation.armor-durability-loss", 1);
-        double radiusSquared = radius * radius;
-
-        new BukkitRunnable() {
-            int ticks = 0;
-
+        exposureTask = new BukkitRunnable() {
             @Override
             public void run() {
-                if (ticks >= durationSeconds) {
-                    cancel();
-                    return;
-                }
-                Particle radiationParticle = resolveParticle("SPELL_MOB_AMBIENT", "SPELL_MOB", "AMBIENT_ENTITY_EFFECT");
-                if (radiationParticle != null) {
-                    world.spawnParticle(radiationParticle, target, 12, 0.6, 0.8, 0.6, 0.02);
-                }
-                Particle coreParticle = resolveParticle("REDSTONE", "DUST");
-                if (coreParticle != null) {
-                    world.spawnParticle(
-                        coreParticle,
-                        target.clone().add(0, 0.8, 0),
-                        8,
-                        0.35,
-                        0.35,
-                        0.35,
-                        new Particle.DustOptions(Color.LIME, 1.4f)
-                    );
-                }
-                for (Player player : world.getPlayers()) {
-                    double distanceSquared = player.getLocation().distanceSquared(target);
-                    if (distanceSquared > radiusSquared) {
-                        continue;
-                    }
-                    double distance = Math.sqrt(distanceSquared);
-                    double intensity = 1.0 - Math.min(distance / radius, 1.0);
-                    double damage = minDamage + (maxDamage - minDamage) * intensity;
-                    double reduction = calculateLeatherReduction(player, leatherReduction);
-                    if (reduction > 0) {
-                        damage *= Math.max(0.0, 1.0 - reduction);
-                        damageLeatherArmor(player, durabilityLoss);
-                    }
-                    player.damage(damage);
-                    if (radiationParticle != null) {
-                        player.spawnParticle(
-                            radiationParticle,
-                            player.getLocation().add(0, 1.0, 0),
-                            8,
-                            0.4,
-                            0.6,
-                            0.4,
-                            0.01
-                        );
-                    }
-                }
-                ticks++;
+                applyRadiationExposure(zone.center(), radius);
             }
-        }.runTaskTimer(plugin, 0L, 20L);
+
+            @Override
+            public void cancel() {
+                super.cancel();
+                exposureTask = null;
+            }
+        };
+        exposureTask.runTaskTimer(plugin, 0L, exposureSeconds * 20L);
+
+        damageTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                applyRadiationDamage(zone.center(), radius, damageIntervalFive, damageIntervalThree);
+            }
+
+            @Override
+            public void cancel() {
+                super.cancel();
+                damageTask = null;
+            }
+        };
+        damageTask.runTaskTimer(plugin, 0L, 20L);
+
+        visualTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                spawnRadiationParticles(zone.center(), radius);
+            }
+
+            @Override
+            public void cancel() {
+                super.cancel();
+                visualTask = null;
+            }
+        };
+        visualTask.runTaskTimer(plugin, 0L, 20L);
     }
 
-    private void createImpactRuins(Location target) {
-        World world = target.getWorld();
+    private void applyRadiationExposure(Location center, double radius) {
+        World world = center.getWorld();
         if (world == null) {
             return;
         }
-        FileConfiguration config = plugin.getConfig();
-        int ruinRadius = config.getInt("meteor.ruin-radius", 12);
-        int craterRadius = config.getInt("meteor.crater-radius", 6);
-        int craterDepth = config.getInt("meteor.crater-depth", 3);
-        int bedrockRadius = config.getInt("meteor.bedrock-radius", 1);
-        List<Material> ruinMaterials = resolveMaterials(
-            config.getStringList("meteor.ruin-blocks"),
-            List.of(Material.NETHERRACK, Material.COBBLESTONE, Material.MAGMA_BLOCK, Material.BLACKSTONE)
-        );
+        PotionEffectType nausea = resolvePotionEffectType("NAUSEA", "CONFUSION");
+        for (Player player : world.getPlayers()) {
+            if (!isWithinRadius(player.getLocation(), center, radius)) {
+                continue;
+            }
+            int level = radiationLevels.getOrDefault(player.getUniqueId(), 0);
+            if (level < 3) {
+                level++;
+                radiationLevels.put(player.getUniqueId(), level);
+                storage.saveRadiationLevel(player.getUniqueId(), level);
+            }
+            applyEffectsForLevel(player, level, nausea);
+        }
+    }
 
-        for (int x = -ruinRadius; x <= ruinRadius; x++) {
-            for (int z = -ruinRadius; z <= ruinRadius; z++) {
-                double distance = Math.sqrt(x * x + z * z);
-                Location base = target.clone().add(x, 0, z);
-                if (distance <= bedrockRadius) {
-                    world.getBlockAt(base).setType(Material.BEDROCK, false);
-                    continue;
+    private void applyEffectsForLevel(Player player, int level, PotionEffectType nausea) {
+        if (level >= 1) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, 25 * 20, 0, true, false, true));
+            if (nausea != null) {
+                player.addPotionEffect(new PotionEffect(nausea, 25 * 20, 0, true, false, true));
+            }
+        }
+        if (level >= 2) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.HUNGER, 25 * 20, 1, true, false, true));
+        }
+        if (level >= 3) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 25 * 20, 0, true, false, true));
+        }
+    }
+
+    private void applyRadiationDamage(Location center, double radius, int intervalFive, int intervalThree) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        for (Player player : world.getPlayers()) {
+            if (!isWithinRadius(player.getLocation(), center, radius)) {
+                continue;
+            }
+            int level = radiationLevels.getOrDefault(player.getUniqueId(), 0);
+            if (level < 2) {
+                continue;
+            }
+            UUID uuid = player.getUniqueId();
+            if (level >= 2) {
+                int counter = damageCounterFive.getOrDefault(uuid, 0) + 1;
+                if (counter >= intervalFive) {
+                    player.damage(1.0);
+                    counter = 0;
                 }
-                if (distance <= craterRadius) {
-                    carveCraterColumn(world, base, craterDepth);
-                    continue;
+                damageCounterFive.put(uuid, counter);
+            }
+            if (level >= 3) {
+                int counter = damageCounterThree.getOrDefault(uuid, 0) + 1;
+                if (counter >= intervalThree) {
+                    player.damage(2.0);
+                    counter = 0;
                 }
-                if (distance <= ruinRadius && random.nextDouble() < 0.35) {
-                    Material chosen = ruinMaterials.get(random.nextInt(ruinMaterials.size()));
-                    world.getBlockAt(base).setType(chosen, false);
-                    if (random.nextDouble() < 0.2) {
-                        world.getBlockAt(base.clone().add(0, 1, 0)).setType(chosen, false);
+                damageCounterThree.put(uuid, counter);
+            }
+        }
+    }
+
+    private void spawnRadiationParticles(Location center, double radius) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        Particle happy = resolveParticle("VILLAGER_HAPPY", "HAPPY_VILLAGER");
+        if (happy != null) {
+            world.spawnParticle(happy, center, 30, radius, 2.0, radius, 0.05);
+        }
+        Particle ash = resolveParticle("ASH", "SMOKE_NORMAL");
+        if (ash != null) {
+            world.spawnParticle(ash, center, 40, radius, 2.5, radius, 0.03);
+        }
+    }
+
+    private void scheduleDomeChecks() {
+        int intervalSeconds = plugin.getConfig().getInt("meteor.dome.check-interval-seconds", 60);
+        domeTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (zone == null || zone.safe()) {
+                    return;
+                }
+                if (isDomeComplete(zone.center())) {
+                    sealRadiation();
+                }
+            }
+
+            @Override
+            public void cancel() {
+                super.cancel();
+                domeTask = null;
+            }
+        };
+        domeTask.runTaskTimer(plugin, intervalSeconds * 20L, intervalSeconds * 20L);
+    }
+
+    private void sealRadiation() {
+        if (zone == null) {
+            return;
+        }
+        cancelRadiationTasks();
+        zone = zone.withSafe(true).withStage(Stage.SEALED);
+        storage.saveZone(zone.toStoredZone());
+        Bukkit.broadcastMessage("§aРадиация изолирована!");
+    }
+
+    private boolean isDomeComplete(Location center) {
+        World world = center.getWorld();
+        if (world == null) {
+            return false;
+        }
+        int radius = plugin.getConfig().getInt("meteor.dome.radius", 15);
+        List<String> glassNames = plugin.getConfig().getStringList("meteor.dome.glass-types");
+        Set<Material> allowedGlass = new HashSet<>(resolveMaterials(glassNames, defaultGlassList()));
+        for (Vector offset : getDomeOffsets(radius)) {
+            int x = center.getBlockX() + offset.getBlockX();
+            int y = center.getBlockY() + offset.getBlockY();
+            int z = center.getBlockZ() + offset.getBlockZ();
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+                return false;
+            }
+            Material type = world.getBlockAt(x, y, z).getType();
+            if (!allowedGlass.contains(type)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<Vector> getDomeOffsets(int radius) {
+        if (domeOffsets != null) {
+            return domeOffsets;
+        }
+        List<Vector> offsets = new ArrayList<>();
+        double min = radius - 0.5;
+        double max = radius + 0.5;
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    double distance = Math.sqrt(x * x + y * y + z * z);
+                    if (distance >= min && distance <= max) {
+                        offsets.add(new Vector(x, y, z));
                     }
                 }
             }
         }
+        domeOffsets = Collections.unmodifiableList(offsets);
+        return domeOffsets;
     }
 
-    private void carveCraterColumn(World world, Location base, int depth) {
-        for (int y = 0; y <= depth; y++) {
-            world.getBlockAt(base.clone().add(0, -y, 0)).setType(Material.AIR, false);
+    private void applyImpactShake(Location center) {
+        double radius = plugin.getConfig().getDouble("meteor.impact.shake-radius", 50.0);
+        int duration = plugin.getConfig().getInt("meteor.impact.shake-duration-ticks", 60);
+        PotionEffectType nausea = resolvePotionEffectType("NAUSEA", "CONFUSION");
+        if (nausea == null) {
+            return;
         }
-        if (random.nextDouble() < 0.4) {
-            world.getBlockAt(base.clone().add(0, -depth - 1, 0)).setType(Material.MAGMA_BLOCK, false);
-        }
-    }
-
-    private double calculateLeatherReduction(Player player, double reductionPerPiece) {
-        int pieces = 0;
-        for (ItemStack stack : player.getInventory().getArmorContents()) {
-            if (stack != null && stack.getType().name().startsWith("LEATHER_")) {
-                pieces++;
-            }
-        }
-        return Math.min(1.0, pieces * reductionPerPiece);
-    }
-
-    private void damageLeatherArmor(Player player, int durabilityLoss) {
-        ItemStack[] armor = player.getInventory().getArmorContents();
-        for (int i = 0; i < armor.length; i++) {
-            ItemStack stack = armor[i];
-            if (stack == null || !stack.getType().name().startsWith("LEATHER_")) {
+        for (Player player : center.getWorld().getPlayers()) {
+            if (!isWithinRadius(player.getLocation(), center, radius)) {
                 continue;
             }
-            if (!(stack.getItemMeta() instanceof Damageable damageable)) {
-                continue;
-            }
-            int newDamage = damageable.getDamage() + durabilityLoss;
-            if (newDamage >= stack.getType().getMaxDurability()) {
-                armor[i] = null;
-                continue;
-            }
-            damageable.setDamage(newDamage);
-            stack.setItemMeta(damageable);
+            player.addPotionEffect(new PotionEffect(nausea, duration, 0, true, false, true));
         }
-        player.getInventory().setArmorContents(armor);
     }
 
-    private ItemStack createMeteorHelmet(Material material) {
-        ItemStack stack = new ItemStack(material);
-        if (material == Material.LEATHER_HELMET) {
-            LeatherArmorMeta meta = (LeatherArmorMeta) stack.getItemMeta();
-            meta.setColor(Color.ORANGE);
-            stack.setItemMeta(meta);
+    private boolean isWithinRadius(Location location, Location center, double radius) {
+        if (location.getWorld() == null || center.getWorld() == null) {
+            return false;
         }
-        return stack;
+        if (!location.getWorld().equals(center.getWorld())) {
+            return false;
+        }
+        return location.distanceSquared(center) <= radius * radius;
     }
 
-    private List<Particle> resolveParticles(List<String> names) {
-        return names.stream()
-            .map(name -> {
-                try {
-                    return Particle.valueOf(name.toUpperCase(Locale.ROOT));
-                } catch (IllegalArgumentException ex) {
-                    return null;
-                }
-            })
-            .filter(Objects::nonNull)
-            .collect(Collectors.toList());
+    private void spawnTrail(World world, Location location, List<Particle> particles) {
+        for (Particle particle : particles) {
+            world.spawnParticle(particle, location, 12, 0.6, 0.6, 0.6, 0.05);
+        }
+    }
+
+    private List<Particle> resolveParticles(List<String> names, List<Particle> fallback) {
+        List<Particle> particles = new ArrayList<>();
+        for (String name : names) {
+            try {
+                particles.add(Particle.valueOf(name.toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore invalid entries.
+            }
+        }
+        return particles.isEmpty() ? fallback : particles;
     }
 
     private List<Material> resolveMaterials(List<String> names, List<Material> fallback) {
-        List<Material> materials = names.stream()
-            .map(name -> Material.matchMaterial(name))
-            .filter(Objects::nonNull)
-            .collect(Collectors.toList());
+        List<Material> materials = new ArrayList<>();
+        for (String name : names) {
+            Material material = Material.matchMaterial(name);
+            if (material != null) {
+                materials.add(material);
+            }
+        }
         return materials.isEmpty() ? fallback : materials;
+    }
+
+    private List<Material> defaultGlassList() {
+        return List.copyOf(EnumSet.of(
+            Material.GLASS,
+            Material.WHITE_STAINED_GLASS,
+            Material.LIGHT_GRAY_STAINED_GLASS,
+            Material.GRAY_STAINED_GLASS,
+            Material.BLACK_STAINED_GLASS,
+            Material.BLUE_STAINED_GLASS,
+            Material.CYAN_STAINED_GLASS,
+            Material.GREEN_STAINED_GLASS,
+            Material.LIME_STAINED_GLASS,
+            Material.BROWN_STAINED_GLASS,
+            Material.ORANGE_STAINED_GLASS,
+            Material.YELLOW_STAINED_GLASS,
+            Material.RED_STAINED_GLASS,
+            Material.PURPLE_STAINED_GLASS,
+            Material.MAGENTA_STAINED_GLASS,
+            Material.PINK_STAINED_GLASS
+        ));
     }
 
     private Particle resolveParticle(String... names) {
         for (String name : names) {
             try {
                 return Particle.valueOf(name.toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException ex) {
-                // Ignore invalid particle names.
+            } catch (IllegalArgumentException ignored) {
+                // Ignore.
             }
         }
         return null;
@@ -530,12 +661,106 @@ public class MeteorController {
         return null;
     }
 
-    private record DisplayShard(
-        UUID id,
-        Vector offset,
-        float spinSpeed,
-        float wobbleSpeed,
-        float wobbleAmplitude,
-        int phase
-    ) {}
+    private ItemStack createCoreItem() {
+        ItemStack stack = new ItemStack(Material.OBSIDIAN);
+        ItemMeta meta = stack.getItemMeta();
+        if (meta != null) {
+            String displayName = plugin.getConfig().getString("meteor.core.display-name", "§aРадиоактивный метеорит");
+            meta.setDisplayName(displayName);
+            int model = plugin.getConfig().getInt("meteor.core.custom-model-data", 0);
+            if (model > 0) {
+                meta.setCustomModelData(model);
+            }
+            stack.setItemMeta(meta);
+        }
+        return stack;
+    }
+
+    private String formatCountdown(int minutes) {
+        if (minutes % 60 == 0) {
+            int hours = minutes / 60;
+            return hours == 1 ? "1 час" : hours + " часов";
+        }
+        return minutes + " минут";
+    }
+
+    private void cancelTasks() {
+        cancelRadiationTasks();
+        if (flightTask != null) {
+            flightTask.cancel();
+        }
+        if (domeTask != null) {
+            domeTask.cancel();
+        }
+        for (BukkitTask task : scheduledTasks) {
+            task.cancel();
+        }
+        scheduledTasks.clear();
+    }
+
+    private void cancelRadiationTasks() {
+        if (exposureTask != null) {
+            exposureTask.cancel();
+        }
+        if (damageTask != null) {
+            damageTask.cancel();
+        }
+        if (visualTask != null) {
+            visualTask.cancel();
+        }
+    }
+
+    private void removeCoreBlock() {
+        if (zone == null || zone.coreLocation() == null) {
+            return;
+        }
+        Location core = zone.coreLocation();
+        if (core.getWorld() == null) {
+            return;
+        }
+        core.getWorld().getBlockAt(core).setType(Material.AIR, false);
+    }
+
+    private record MeteorZone(Location center, long impactTime, Stage stage, boolean safe, Location coreLocation) {
+        MeteorZone withStage(Stage newStage) {
+            return new MeteorZone(center, impactTime, newStage, safe, coreLocation);
+        }
+
+        MeteorZone withSafe(boolean newSafe) {
+            return new MeteorZone(center, impactTime, stage, newSafe, coreLocation);
+        }
+
+        MeteorZone withCore(Location core) {
+            return new MeteorZone(center, impactTime, stage, safe, core);
+        }
+
+        MeteorStorage.StoredZone toStoredZone() {
+            return new MeteorStorage.StoredZone(
+                center.getWorld() == null ? "" : center.getWorld().getName(),
+                center.getX(),
+                center.getY(),
+                center.getZ(),
+                impactTime,
+                stage.name()
+            );
+        }
+    }
+
+    private enum Stage {
+        SCHEDULED,
+        FALLING,
+        IMPACTED,
+        SEALED;
+
+        static Stage fromString(String value) {
+            if (value == null) {
+                return SCHEDULED;
+            }
+            try {
+                return Stage.valueOf(value.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                return SCHEDULED;
+            }
+        }
+    }
 }
