@@ -88,6 +88,14 @@ public class MeteorController {
         storage.clearZone();
     }
 
+    public void start(Location target) {
+        startMeteor(target, false);
+    }
+
+    public void stop() {
+        stopMeteor();
+    }
+
     public boolean checkDome(CommandSender sender) {
         if (zone == null || zone.stage().compareTo(Stage.IMPACTED) < 0 || zone.safe()) {
             return false;
@@ -252,7 +260,7 @@ public class MeteorController {
 
         List<Particle> trailParticles = resolveParticles(
             plugin.getConfig().getStringList("meteor.flight.trail-particles"),
-            List.of(Particle.FLAME, Particle.SMOKE_LARGE, Particle.FIREWORKS_SPARK)
+            defaultTrailParticles()
         );
         Sound whistle = resolveSound(plugin.getConfig().getString("meteor.flight.whistle-sound", "ENTITY_ARROW_SHOOT"));
         int flashHeight = plugin.getConfig().getInt("meteor.flight.flash-y", 100);
@@ -429,7 +437,10 @@ public class MeteorController {
             player.addPotionEffect(new PotionEffect(PotionEffectType.HUNGER, 25 * 20, 1, true, false, true));
         }
         if (level >= 3) {
-            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 25 * 20, 0, true, false, true));
+            PotionEffectType slow = resolvePotionEffectType("SLOW", "SLOWNESS");
+            if (slow != null) {
+                player.addPotionEffect(new PotionEffect(slow, 25 * 20, 0, true, false, true));
+            }
         }
     }
 
@@ -630,6 +641,19 @@ public class MeteorController {
             Material.MAGENTA_STAINED_GLASS,
             Material.PINK_STAINED_GLASS
         ));
+    }
+
+    private List<Particle> defaultTrailParticles() {
+        List<Particle> particles = new ArrayList<>(List.of(Particle.FLAME));
+        Particle smoke = resolveParticle("SMOKE", "SMOKE_NORMAL", "CAMPFIRE_COSY_SMOKE");
+        if (smoke != null) {
+            particles.add(smoke);
+        }
+        Particle fireworks = resolveParticle("FIREWORKS_SPARK", "FIREWORK", "FIREWORK_ROCKET");
+        if (fireworks != null) {
+            particles.add(fireworks);
+        }
+        return particles;
     }
 
     private Particle resolveParticle(String... names) {
