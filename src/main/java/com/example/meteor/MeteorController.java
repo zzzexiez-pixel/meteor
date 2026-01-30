@@ -322,6 +322,12 @@ public class MeteorController {
         if (explosion != null) {
             world.spawnParticle(explosion, center, 8, 1.5, 1.5, 1.5, 0.1);
         }
+        float explosionPower = (float) plugin.getConfig().getDouble("meteor.impact.explosion-power", 4.0);
+        boolean explosionFire = plugin.getConfig().getBoolean("meteor.impact.explosion-fire", false);
+        boolean explosionBreakBlocks = plugin.getConfig().getBoolean("meteor.impact.explosion-break-blocks", false);
+        if (explosionPower > 0.0f) {
+            world.createExplosion(center, explosionPower, explosionFire, explosionBreakBlocks);
+        }
 
         createCrater(center);
         applyImpactShake(center);

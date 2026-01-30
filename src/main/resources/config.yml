@@ -20,6 +20,9 @@ meteor:
 
   impact:
     sound: "ENTITY_GENERIC_EXPLODE"
+    explosion-power: 4.0
+    explosion-fire: false
+    explosion-break-blocks: false
     crater-size: 5
     crater-materials:
       - "OBSIDIAN"
