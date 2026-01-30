@@ -16,10 +16,15 @@ meteor:
       - "SMOKE_LARGE"
       - "FIREWORKS_SPARK"
     whistle-sound: "ENTITY_ARROW_SHOOT"
+    rumble-sound: "ENTITY_PHANTOM_FLAP"
+    approach-sound: "ENTITY_GHAST_SHOOT"
     flash-y: 100
 
   impact:
     sound: "ENTITY_GENERIC_EXPLODE"
+    landing-sound: "BLOCK_ANVIL_LAND"
+    explosion-sound: "ENTITY_GENERIC_EXPLODE"
+    flash-sound: "ENTITY_LIGHTNING_BOLT_THUNDER"
     explosion-power: 10.0
     explosion-fire: true
     explosion-break-blocks: true
@@ -29,12 +34,24 @@ meteor:
     shockwave-radius: 18.0
     shockwave-steps: 12
     shockwave-points: 40
-    crater-size: 9
-    crater-depth: 12
-    crater-rim-height: 2
+    crater-size: 16
+    crater-depth: 22
+    crater-rim-height: 3
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
+      - "MAGMA_BLOCK"
+      - "BLACKSTONE"
+      - "BASALT"
+      - "DEEPSLATE"
+    debris-radius: 28
+    debris-count: 90
+    debris-materials:
+      - "OBSIDIAN"
+      - "CRYING_OBSIDIAN"
+      - "BLACKSTONE"
+      - "COBBLED_DEEPSLATE"
+      - "NETHERRACK"
     fire-radius: 14
     fire-chance: 0.35
     magma-chance-percent: 12
@@ -78,6 +95,8 @@ meteor:
     check-interval-seconds: 60
     glass-types:
       - "GLASS"
+      - "TINTED_GLASS"
+      - "GLASS_PANE"
       - "WHITE_STAINED_GLASS"
       - "LIGHT_GRAY_STAINED_GLASS"
       - "GRAY_STAINED_GLASS"

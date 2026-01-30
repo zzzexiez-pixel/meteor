@@ -41,18 +41,7 @@ public class DomeMonitor {
                     return;
                 }
                 int radius = config.getInt("meteor.dome.radius", 15);
-                Set<Material> glassTypes = new HashSet<>();
-                List<String> types = config.getStringList("meteor.dome.glass-types");
-                for (String type : types) {
-                    try {
-                        glassTypes.add(Material.valueOf(type));
-                    } catch (IllegalArgumentException ignored) {
-                        // ignore
-                    }
-                }
-                if (glassTypes.isEmpty()) {
-                    glassTypes.add(Material.GLASS);
-                }
+                Set<Material> glassTypes = loadGlassTypes(config);
 
                 boolean stable = isDomeStable(world, impact, radius, glassTypes);
                 if (stable != domeStable) {
@@ -85,6 +74,24 @@ public class DomeMonitor {
             }
         }
         return hits >= samples * 0.75;
+    }
+
+    private Set<Material> loadGlassTypes(FileConfiguration config) {
+        Set<Material> glassTypes = new HashSet<>();
+        List<String> types = config.getStringList("meteor.dome.glass-types");
+        for (String type : types) {
+            try {
+                glassTypes.add(Material.valueOf(type));
+            } catch (IllegalArgumentException ignored) {
+                // ignore
+            }
+        }
+        for (Material material : Material.values()) {
+            if (material.isBlock() && material.name().contains("GLASS")) {
+                glassTypes.add(material);
+            }
+        }
+        return glassTypes;
     }
 
     public boolean isDomeStable() {

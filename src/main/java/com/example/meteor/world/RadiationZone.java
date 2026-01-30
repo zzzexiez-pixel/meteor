@@ -8,13 +8,19 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class RadiationZone {
     private final Plugin plugin;
@@ -22,6 +28,9 @@ public class RadiationZone {
     private final FileConfiguration config;
     private BukkitRunnable task;
     private int elapsedSeconds = 0;
+    private boolean domeStable = false;
+    private int domeCheckCounter = 0;
+    private List<Vector> domeOffsets;
 
     public RadiationZone(Plugin plugin, Location origin, FileConfiguration config) {
         this.plugin = plugin;
@@ -39,6 +48,12 @@ public class RadiationZone {
                     cancel();
                     return;
                 }
+                if (shouldCheckDome()) {
+                    domeStable = isDomeComplete(world);
+                }
+                if (domeStable) {
+                    return;
+                }
                 double radius = config.getDouble("meteor.radiation.radius", 40.0);
                 int progressionSeconds = config.getInt("meteor.radiation.progression-seconds", 20);
                 int halfHeartInterval = config.getInt("meteor.radiation.damage-half-heart-interval", 5);
@@ -50,6 +65,11 @@ public class RadiationZone {
                 for (Player player : world.getPlayers()) {
                     double distanceSq = player.getLocation().distanceSquared(origin);
                     if (distanceSq > radius * radius) {
+                        continue;
+                    }
+                    boolean protectedByLeather = applyLeatherProtection(player);
+                    if (protectedByLeather) {
+                        player.spawnParticle(Particle.SPORE_BLOSSOM_AIR, player.getLocation(), 6, 0.5, 0.8, 0.5, 0.01);
                         continue;
                     }
                     if (nausea != null) {
@@ -124,5 +144,142 @@ public class RadiationZone {
             task.cancel();
             task = null;
         }
+    }
+
+    private boolean applyLeatherProtection(Player player) {
+        ItemStack[] armor = player.getInventory().getArmorContents();
+        boolean hasLeather = false;
+        for (int i = 0; i < armor.length; i++) {
+            ItemStack item = armor[i];
+            if (item == null || item.getType().isAir()) {
+                continue;
+            }
+            if (!isLeatherArmor(item.getType())) {
+                continue;
+            }
+            hasLeather = true;
+            Damageable meta = item.hasItemMeta() && item.getItemMeta() instanceof Damageable damageable ? damageable : null;
+            if (meta == null) {
+                continue;
+            }
+            int newDamage = meta.getDamage() + 1;
+            if (newDamage >= item.getType().getMaxDurability()) {
+                armor[i] = new ItemStack(Material.AIR);
+            } else {
+                meta.setDamage(newDamage);
+                item.setItemMeta(meta);
+                armor[i] = item;
+            }
+        }
+        if (hasLeather) {
+            player.getInventory().setArmorContents(armor);
+        }
+        return hasLeather;
+    }
+
+    private boolean isLeatherArmor(Material material) {
+        return switch (material) {
+            case LEATHER_HELMET, LEATHER_CHESTPLATE, LEATHER_LEGGINGS, LEATHER_BOOTS -> true;
+            default -> false;
+        };
+    }
+
+    private boolean shouldCheckDome() {
+        int interval = Math.max(1, config.getInt("meteor.dome.check-interval-seconds", 60));
+        if (domeCheckCounter <= 0) {
+            domeCheckCounter = interval;
+            return true;
+        }
+        domeCheckCounter--;
+        return false;
+    }
+
+    private boolean isDomeComplete(World world) {
+        int radius = config.getInt("meteor.dome.radius", 15);
+        Set<Material> glassTypes = loadGlassTypes();
+        for (Vector offset : getDomeOffsets(radius)) {
+            int x = origin.getBlockX() + offset.getBlockX();
+            int y = origin.getBlockY() + offset.getBlockY();
+            int z = origin.getBlockZ() + offset.getBlockZ();
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+                return false;
+            }
+            Material material = world.getBlockAt(x, y, z).getType();
+            if (!glassTypes.contains(material)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<Vector> getDomeOffsets(int radius) {
+        if (domeOffsets != null) {
+            return domeOffsets;
+        }
+        List<Vector> offsets = new ArrayList<>();
+        double min = radius - 0.5;
+        double max = radius + 0.5;
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    double distance = Math.sqrt(x * x + y * y + z * z);
+                    if (distance >= min && distance <= max) {
+                        offsets.add(new Vector(x, y, z));
+                    }
+                }
+            }
+        }
+        domeOffsets = offsets;
+        return offsets;
+    }
+
+    private Set<Material> loadGlassTypes() {
+        List<String> names = config.getStringList("meteor.dome.glass-types");
+        Set<Material> types = new HashSet<>();
+        for (String name : names) {
+            try {
+                types.add(Material.valueOf(name));
+            } catch (IllegalArgumentException ignored) {
+                // ignore
+            }
+        }
+        for (Material material : Material.values()) {
+            if (material.isBlock() && material.name().contains("GLASS")) {
+                types.add(material);
+            }
+        }
+        if (types.isEmpty()) {
+            types.addAll(defaultGlassTypes());
+        }
+        return types;
+    }
+
+    private Set<Material> defaultGlassTypes() {
+        Set<Material> types = new HashSet<>(EnumSet.of(
+            Material.GLASS,
+            Material.TINTED_GLASS,
+            Material.GLASS_PANE,
+            Material.WHITE_STAINED_GLASS,
+            Material.LIGHT_GRAY_STAINED_GLASS,
+            Material.GRAY_STAINED_GLASS,
+            Material.BLACK_STAINED_GLASS,
+            Material.BLUE_STAINED_GLASS,
+            Material.CYAN_STAINED_GLASS,
+            Material.GREEN_STAINED_GLASS,
+            Material.LIME_STAINED_GLASS,
+            Material.BROWN_STAINED_GLASS,
+            Material.ORANGE_STAINED_GLASS,
+            Material.YELLOW_STAINED_GLASS,
+            Material.RED_STAINED_GLASS,
+            Material.PURPLE_STAINED_GLASS,
+            Material.MAGENTA_STAINED_GLASS,
+            Material.PINK_STAINED_GLASS
+        ));
+        for (Material material : Material.values()) {
+            if (material.isBlock() && material.name().endsWith("_STAINED_GLASS_PANE")) {
+                types.add(material);
+            }
+        }
+        return types;
     }
 }
