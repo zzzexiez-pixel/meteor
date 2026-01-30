@@ -525,7 +525,7 @@ public class MeteorManager {
             double z = Math.sin(offsetAngle) * ringRadius;
             Location aura = current.clone().add(x, 0.2, z);
             world.spawnParticle(Particle.DRAGON_BREATH, aura, 4, 0.1, 0.1, 0.1, 0.01);
-            world.spawnParticle(Particle.SMOKE_NORMAL, aura, 6, 0.12, 0.12, 0.12, 0.02);
+            world.spawnParticle(Particle.SMOKE, aura, 6, 0.12, 0.12, 0.12, 0.02);
         }
     }
 
