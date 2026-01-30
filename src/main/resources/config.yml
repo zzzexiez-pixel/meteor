@@ -1,0 +1,13 @@
+meteor:
+  height: 60
+  fall-duration-ticks: 80
+  radius: 2.0
+  block: "NETHERITE_BLOCK"
+  trail-particles:
+    - "FLAME"
+    - "SMOKE_LARGE"
+  impact-particles:
+    - "EXPLOSION"
+    - "CAMPFIRE_COSY_SMOKE"
+  impact-sound: "ENTITY_GENERIC_EXPLODE"
+  impact-power: 0.0

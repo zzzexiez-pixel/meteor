@@ -1,0 +1,14 @@
+name: MeteorPlugin
+version: 1.0.0
+main: com.example.meteor.MeteorPlugin
+api-version: "1.21"
+author: OpenAI
+commands:
+  meteor:
+    description: Управление метеоритом
+    usage: "/meteor <start|stop> [x y z]"
+    permission: meteor.use
+permissions:
+  meteor.use:
+    description: Разрешает использовать команду /meteor
+    default: op
