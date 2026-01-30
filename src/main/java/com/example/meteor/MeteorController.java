@@ -330,9 +330,7 @@ public class MeteorController {
         float explosionPower = (float) plugin.getConfig().getDouble("meteor.impact.explosion-power", 4.0);
         boolean explosionFire = plugin.getConfig().getBoolean("meteor.impact.explosion-fire", false);
         boolean explosionBreakBlocks = plugin.getConfig().getBoolean("meteor.impact.explosion-break-blocks", false);
-        if (explosionPower > 0.0f) {
-            world.createExplosion(center, explosionPower, explosionFire, explosionBreakBlocks);
-        }
+        applyExplosion(center, explosionPower, explosionFire, explosionBreakBlocks);
 
         createCrater(center);
         applyImpactShake(center);
@@ -402,6 +400,65 @@ public class MeteorController {
             }.runTaskTimer(plugin, 0L, 2L);
             scheduledTasks.add(task);
         }
+    }
+
+    private void applyExplosion(Location center, float power, boolean fire, boolean breakBlocks) {
+        if (power <= 0.0f) {
+            return;
+        }
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        boolean exploded = world.createExplosion(center, power, fire, breakBlocks);
+        if (!exploded && breakBlocks) {
+            int radius = Math.max(1, Math.round(power * 2.0f));
+            breakBlocksInRadius(world, center, radius);
+        }
+    }
+
+    private void breakBlocksInRadius(World world, Location center, int radius) {
+        int centerX = center.getBlockX();
+        int centerY = center.getBlockY();
+        int centerZ = center.getBlockZ();
+        int radiusSquared = radius * radius;
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    int distance = x * x + y * y + z * z;
+                    if (distance > radiusSquared) {
+                        continue;
+                    }
+                    Block block = world.getBlockAt(centerX + x, centerY + y, centerZ + z);
+                    Material material = block.getType();
+                    if (!isExplosionBreakable(material)) {
+                        continue;
+                    }
+                    block.setType(Material.AIR, false);
+                }
+            }
+        }
+    }
+
+    private boolean isExplosionBreakable(Material material) {
+        if (material.isAir() || material == Material.WATER || material == Material.LAVA) {
+            return false;
+        }
+        return switch (material) {
+            case BEDROCK,
+                 BARRIER,
+                 END_PORTAL,
+                 END_PORTAL_FRAME,
+                 END_GATEWAY,
+                 COMMAND_BLOCK,
+                 CHAIN_COMMAND_BLOCK,
+                 REPEATING_COMMAND_BLOCK,
+                 STRUCTURE_BLOCK,
+                 STRUCTURE_VOID,
+                 LIGHT,
+                 JIGSAW -> false;
+            default -> true;
+        };
     }
 
     private void createCrater(Location center) {
