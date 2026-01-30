@@ -2,6 +2,7 @@ meteor:
   height: 60
   fall-duration-ticks: 1200
   radius: 2.0
+  horizontal-offset: 25.0
   block: "NETHERITE_BLOCK"
   trail-particles:
     - "FLAME"
@@ -14,6 +15,7 @@ meteor:
   impact-sound: "ENTITY_GENERIC_EXPLODE"
   impact-power: 20.0
   explosion-radius: 100.0
+  block-destruction-radius: 50
   falling-sound: "ENTITY_PHANTOM_FLAP"
   shake-radius: 40.0
   shake-duration-ticks: 20
