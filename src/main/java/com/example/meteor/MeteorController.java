@@ -124,7 +124,18 @@ public class MeteorController {
         for (Particle particle : particles) {
             world.spawnParticle(particle, location, 8, radius * 0.5, radius * 0.5, radius * 0.5, 0.01);
         }
-        world.spawnParticle(Particle.REDSTONE, location, 2, 0.2, 0.2, 0.2, new Particle.DustOptions(Color.ORANGE, 1.6f));
+        Particle dustParticle = resolveParticle("REDSTONE", "DUST");
+        if (dustParticle != null) {
+            world.spawnParticle(
+                dustParticle,
+                location,
+                2,
+                0.2,
+                0.2,
+                0.2,
+                new Particle.DustOptions(Color.ORANGE, 1.6f)
+            );
+        }
     }
 
     private ItemStack createMeteorHelmet(Material material) {
@@ -148,6 +159,17 @@ public class MeteorController {
             })
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
+    }
+
+    private Particle resolveParticle(String... names) {
+        for (String name : names) {
+            try {
+                return Particle.valueOf(name.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                // Ignore invalid particle names.
+            }
+        }
+        return null;
     }
 
     private Sound resolveSound(String name) {
