@@ -40,6 +40,10 @@ public class MeteorManager {
     }
 
     public void startMeteor(CommandSender sender, Integer x, Integer z) {
+        startMeteor(sender, x, z, false);
+    }
+
+    public void startMeteor(CommandSender sender, Integer x, Integer z, boolean immediate) {
         if (running) {
             sender.sendMessage("§cМетеорит уже запущен.");
             return;
@@ -62,6 +66,12 @@ public class MeteorManager {
         List<Integer> reminders = config.getIntegerList("meteor.reminder-times-minutes");
         String title = config.getString("meteor.warning-title", "§6☄ Метеорит приближается!");
         String subtitleTemplate = config.getString("meteor.warning-subtitle", "Падение через %time% X:%x% Z:%z%");
+
+        if (immediate) {
+            sender.sendMessage("§aМетеорит запущен принудительно.");
+            startFlight();
+            return;
+        }
 
         countdownTask = new BukkitRunnable() {
             int minutesLeft = countdownMinutes;

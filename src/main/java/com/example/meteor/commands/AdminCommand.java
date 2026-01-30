@@ -19,7 +19,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage("§cИспользование: /admin meteor <start|stop> [x] [z]");
+            sender.sendMessage("§cИспользование: /admin meteor <start|stop> [x] [z] | /admin meteor start free [x] [z]");
             return true;
         }
         if (!args[0].equalsIgnoreCase("meteor")) {
@@ -31,22 +31,28 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
             case "start" -> {
                 Integer x = null;
                 Integer z = null;
-                if (args.length >= 4) {
+                boolean immediate = false;
+                int index = 2;
+                if (args.length >= 3 && args[2].equalsIgnoreCase("free")) {
+                    immediate = true;
+                    index = 3;
+                }
+                if (args.length >= index + 2) {
                     try {
-                        x = Integer.parseInt(args[2]);
-                        z = Integer.parseInt(args[3]);
+                        x = Integer.parseInt(args[index]);
+                        z = Integer.parseInt(args[index + 1]);
                     } catch (NumberFormatException e) {
                         sender.sendMessage("§cКоординаты должны быть числами.");
                         return true;
                     }
                 }
-                meteorManager.startMeteor(sender, x, z);
+                meteorManager.startMeteor(sender, x, z, immediate);
             }
             case "stop" -> {
                 meteorManager.stopMeteor();
                 sender.sendMessage("§eМетеорит остановлен.");
             }
-            default -> sender.sendMessage("§cИспользование: /admin meteor <start|stop> [x] [z]");
+            default -> sender.sendMessage("§cИспользование: /admin meteor <start|stop> [x] [z] | /admin meteor start free [x] [z]");
         }
         return true;
     }
@@ -59,6 +65,8 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
         } else if (args.length == 2 && args[0].equalsIgnoreCase("meteor")) {
             suggestions.add("start");
             suggestions.add("stop");
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("meteor") && args[1].equalsIgnoreCase("start")) {
+            suggestions.add("free");
         }
         return suggestions;
     }
