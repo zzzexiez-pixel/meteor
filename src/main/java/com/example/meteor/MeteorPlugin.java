@@ -1,44 +1,54 @@
 package com.example.meteor;
 
-import org.bukkit.command.PluginCommand;
+import com.example.meteor.commands.AdminCommand;
+import com.example.meteor.commands.RadiationCommand;
+import com.example.meteor.commands.ResearchCommand;
+import com.example.meteor.data.ResearchRepository;
+import com.example.meteor.world.DomeMonitor;
+import com.example.meteor.world.MeteorManager;
+import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class MeteorPlugin extends JavaPlugin {
-    private MeteorController meteorController;
-    private SettingsRepository settingsRepository;
-    private MeteorStorage meteorStorage;
+public class MeteorPlugin extends JavaPlugin {
+    private MeteorManager meteorManager;
+    private ResearchRepository researchRepository;
+    private DomeMonitor domeMonitor;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        settingsRepository = new SettingsRepository(this);
-        settingsRepository.loadToConfig(getConfig());
-        saveConfig();
+        researchRepository = new ResearchRepository(this);
+        researchRepository.init();
 
-        meteorStorage = new MeteorStorage(this);
-        meteorController = new MeteorController(this, meteorStorage);
-        PluginCommand adminCommand = getCommand("admin");
-        if (adminCommand != null) {
-            adminCommand.setExecutor(new AdminCommand(this, meteorController));
-        }
-        PluginCommand radiationCommand = getCommand("radiation");
-        if (radiationCommand != null) {
-            radiationCommand.setExecutor(new RadiationCommand(meteorController));
-        }
-        PluginCommand researchCommand = getCommand("research");
-        if (researchCommand != null) {
-            researchCommand.setExecutor(new ResearchCommand());
-        }
-        getServer().getPluginManager().registerEvents(new MeteorListener(meteorController), this);
+        meteorManager = new MeteorManager(this, researchRepository);
+        domeMonitor = new DomeMonitor(this, meteorManager);
+
+        var admin = new AdminCommand(meteorManager);
+        var radiation = new RadiationCommand(meteorManager);
+        var research = new ResearchCommand(researchRepository);
+
+        getCommand("admin").setExecutor(admin);
+        getCommand("admin").setTabCompleter(admin);
+        getCommand("radiation").setExecutor(radiation);
+        getCommand("radiation").setTabCompleter(radiation);
+        getCommand("research").setExecutor(research);
+        getCommand("research").setTabCompleter(research);
+
+        domeMonitor.start();
+
+        Bukkit.getLogger().info("MeteorPlugin enabled");
     }
 
     @Override
     public void onDisable() {
-        if (meteorController != null) {
-            meteorController.stopMeteor();
+        if (meteorManager != null) {
+            meteorManager.stopMeteor();
         }
-        if (settingsRepository != null) {
-            settingsRepository.saveFromConfig(getConfig());
+        if (domeMonitor != null) {
+            domeMonitor.stop();
+        }
+        if (researchRepository != null) {
+            researchRepository.close();
         }
     }
 }
