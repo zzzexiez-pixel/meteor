@@ -1,6 +1,5 @@
 plugins {
     java
-    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.example.meteor"
@@ -16,12 +15,19 @@ dependencies {
     implementation("org.xerial:sqlite-jdbc:3.46.0.0")
 }
 
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+tasks.jar {
     archiveClassifier.set("")
-}
-
-tasks.build {
-    dependsOn(tasks.shadowJar)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+    from(
+        configurations.runtimeClasspath.get().map { dependency ->
+            if (dependency.isDirectory) {
+                dependency
+            } else {
+                zipTree(dependency)
+            }
+        }
+    )
 }
 
 java {
