@@ -39,6 +39,21 @@ meteor:
     progression-seconds: 20
     damage-half-heart-interval: 5
     damage-heart-interval: 3
+    sculk:
+      enabled: true
+      min-explosion-power: 6.0
+      radius: 18
+      blocks-per-step: 6
+      interval-seconds: 8
+      replaceable-blocks:
+        - "STONE"
+        - "DEEPSLATE"
+        - "DIRT"
+        - "GRASS_BLOCK"
+        - "ANDESITE"
+        - "DIORITE"
+        - "GRANITE"
+        - "TUFF"
 
   dome:
     radius: 15
