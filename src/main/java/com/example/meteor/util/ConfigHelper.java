@@ -6,6 +6,7 @@ import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.potion.PotionEffectType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,20 @@ public final class ConfigHelper {
             Bukkit.getLogger().warning("Unknown sound: " + name);
             return fallback;
         }
+    }
+
+    public static PotionEffectType safePotionEffectType(String primaryName, String fallbackName) {
+        PotionEffectType type = null;
+        if (primaryName != null) {
+            type = PotionEffectType.getByName(primaryName.toUpperCase(Locale.ROOT));
+        }
+        if (type == null && fallbackName != null) {
+            type = PotionEffectType.getByName(fallbackName.toUpperCase(Locale.ROOT));
+        }
+        if (type == null) {
+            Bukkit.getLogger().warning("Unknown potion effect type(s): " + primaryName + ", " + fallbackName);
+        }
+        return type;
     }
 
     public static World defaultWorld() {
