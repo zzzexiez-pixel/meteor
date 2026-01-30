@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Duration;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -31,6 +32,8 @@ import org.bukkit.util.Vector;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.title.Title;
 
 public class MeteorController {
     private final MeteorPlugin plugin;
@@ -201,8 +204,12 @@ public class MeteorController {
 
         String chatMessage = title + " " + subtitle;
         Bukkit.broadcastMessage(chatMessage);
+        LegacyComponentSerializer serializer = LegacyComponentSerializer.legacySection();
+        Component titleComponent = serializer.deserialize(title);
+        Component subtitleComponent = serializer.deserialize(subtitle);
+        Title.Times times = Title.Times.times(Duration.ofMillis(500), Duration.ofMillis(4000), Duration.ofMillis(1000));
         for (Player player : Bukkit.getOnlinePlayers()) {
-            player.sendTitle(title, subtitle, 10, 80, 20);
+            player.showTitle(Title.title(titleComponent, subtitleComponent, times));
         }
     }
 
