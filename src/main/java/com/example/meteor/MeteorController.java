@@ -51,12 +51,19 @@ public class MeteorController {
         int height = config.getInt("meteor.height", 60);
         int duration = config.getInt("meteor.fall-duration-ticks", 80);
         double radius = config.getDouble("meteor.radius", 2.0);
+        double horizontalOffset = config.getDouble("meteor.horizontal-offset", 20.0);
         Material blockMaterial = Material.matchMaterial(config.getString("meteor.block", "NETHERITE_BLOCK"));
         if (blockMaterial == null) {
             blockMaterial = Material.NETHERITE_BLOCK;
         }
 
-        Location startLocation = target.clone().add(0, height, 0);
+        double offsetX = 0.0;
+        double offsetZ = 0.0;
+        if (horizontalOffset > 0.0) {
+            offsetX = (random.nextDouble() * 2.0 - 1.0) * horizontalOffset;
+            offsetZ = (random.nextDouble() * 2.0 - 1.0) * horizontalOffset;
+        }
+        Location startLocation = target.clone().add(offsetX, height, offsetZ);
         ArmorStand stand = (ArmorStand) world.spawnEntity(startLocation, EntityType.ARMOR_STAND);
         stand.setInvisible(true);
         stand.setMarker(true);
@@ -72,6 +79,7 @@ public class MeteorController {
         Sound impactSound = resolveSound(config.getString("meteor.impact-sound", "ENTITY_GENERIC_EXPLODE"));
         float impactPower = (float) config.getDouble("meteor.impact-power", 12.0);
         float explosionRadius = (float) config.getDouble("meteor.explosion-radius", 100.0);
+        int destructionRadius = config.getInt("meteor.block-destruction-radius", 50);
         Sound fallingSound = resolveSound(config.getString("meteor.falling-sound", "ENTITY_PHANTOM_FLAP"));
 
         Vector step = target.toVector().subtract(startLocation.toVector()).multiply(1.0 / duration);
@@ -87,7 +95,7 @@ public class MeteorController {
                 }
 
                 if (ticks >= duration) {
-                    onImpact(target, impactParticles, impactSound, impactPower, radius, explosionRadius);
+                    onImpact(target, impactParticles, impactSound, impactPower, radius, explosionRadius, destructionRadius);
                     stand.remove();
                     removeDisplays();
                     cancel();
@@ -140,7 +148,8 @@ public class MeteorController {
         Sound impactSound,
         float power,
         double radius,
-        float explosionRadius
+        float explosionRadius,
+        int destructionRadius
     ) {
         World world = target.getWorld();
         if (world == null) {
@@ -159,9 +168,44 @@ public class MeteorController {
         }
         world.playSound(target, impactSound, 2.2f, 0.65f);
         world.createExplosion(target, power, false, true);
+        destroyBlocks(target, destructionRadius);
         createImpactRuins(target);
         applyImpactShake(world, target);
         applyRadiation(target, explosionRadius);
+    }
+
+    private void destroyBlocks(Location target, int radius) {
+        if (radius <= 0) {
+            return;
+        }
+        World world = target.getWorld();
+        if (world == null) {
+            return;
+        }
+        int intRadius = Math.max(1, radius);
+        int radiusSquared = intRadius * intRadius;
+        int originX = target.getBlockX();
+        int originY = target.getBlockY();
+        int originZ = target.getBlockZ();
+        for (int x = -intRadius; x <= intRadius; x++) {
+            int xSquared = x * x;
+            for (int y = -intRadius; y <= intRadius; y++) {
+                int xySquared = xSquared + y * y;
+                if (xySquared > radiusSquared) {
+                    continue;
+                }
+                for (int z = -intRadius; z <= intRadius; z++) {
+                    if (xySquared + z * z > radiusSquared) {
+                        continue;
+                    }
+                    var block = world.getBlockAt(originX + x, originY + y, originZ + z);
+                    if (block.getType() == Material.BEDROCK || block.getType().isAir()) {
+                        continue;
+                    }
+                    block.setType(Material.AIR, false);
+                }
+            }
+        }
     }
 
     private void spawnTrailParticles(World world, Location location, double radius, List<Particle> particles) {
