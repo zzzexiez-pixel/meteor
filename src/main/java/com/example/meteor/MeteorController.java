@@ -27,12 +27,13 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Transformation;
 import org.joml.Vector3f;
+import org.joml.Quaternionf;
 
 public class MeteorController {
     private final MeteorPlugin plugin;
     private BukkitRunnable activeTask;
     private UUID armorStandId;
-    private final List<UUID> displayIds = new ArrayList<>();
+    private final List<DisplayShard> displayShards = new ArrayList<>();
     private final Random random = new Random();
 
     public MeteorController(MeteorPlugin plugin) {
@@ -96,7 +97,7 @@ public class MeteorController {
 
                 Location current = stand.getLocation().add(step);
                 stand.teleport(current);
-                moveDisplays(current);
+                moveDisplays(current, ticks);
                 spawnTrailParticles(world, current, radius, trailParticles);
                 applyScreenShake(world, current, explosionRadius);
                 if (ticks % 10 == 0) {
@@ -168,6 +169,10 @@ public class MeteorController {
         for (Particle particle : particles) {
             world.spawnParticle(particle, location, 8, radius * 0.5, radius * 0.5, radius * 0.5, 0.01);
         }
+        Particle ashParticle = resolveParticle("ASH", "SMOKE_NORMAL");
+        if (ashParticle != null) {
+            world.spawnParticle(ashParticle, location, 12, radius * 0.6, 0.6, radius * 0.6, 0.01);
+        }
         Particle dustParticle = resolveParticle("REDSTONE", "DUST");
         if (dustParticle != null) {
             world.spawnParticle(
@@ -183,21 +188,36 @@ public class MeteorController {
         world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, location, 2, radius * 0.3, 0.5, radius * 0.3, 0.02);
         world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, location, 6, radius * 0.5, 0.5, radius * 0.5, 0.01);
         world.spawnParticle(Particle.LAVA, location, 2, radius * 0.2, 0.2, radius * 0.2, 0.01);
+        Particle sparks = resolveParticle("FIREWORKS_SPARK", "FIREWORK", "CRIT");
+        if (sparks != null) {
+            world.spawnParticle(sparks, location, 10, radius * 0.4, 0.4, radius * 0.4, 0.05);
+        }
     }
 
     private void spawnMeteorDisplays(World world, Location location, Material material) {
-        List<BlockDisplay> displays = new ArrayList<>();
-        displays.add(createBlockDisplay(world, location, material, 1.0f));
-        displays.add(createBlockDisplay(world, location.clone().add(0.6, 0.2, 0.3), material, 0.7f));
-        displays.add(createBlockDisplay(world, location.clone().add(-0.5, -0.1, -0.4), material, 0.6f));
-        displays.add(createBlockDisplay(world, location.clone().add(0.2, -0.4, 0.6), material, 0.5f));
-        displays.add(createBlockDisplay(world, location.clone().add(-0.7, 0.3, 0.1), material, 0.4f));
-        for (BlockDisplay display : displays) {
+        displayShards.clear();
+        List<Vector> offsets = List.of(
+            new Vector(0.0, 0.0, 0.0),
+            new Vector(0.7, 0.2, 0.4),
+            new Vector(-0.6, -0.1, -0.5),
+            new Vector(0.3, -0.5, 0.6),
+            new Vector(-0.8, 0.3, 0.2),
+            new Vector(0.4, 0.6, -0.3),
+            new Vector(-0.4, 0.5, 0.7),
+            new Vector(0.9, -0.3, -0.2)
+        );
+        for (int i = 0; i < offsets.size(); i++) {
+            float scale = 1.0f - (i * 0.08f);
+            BlockDisplay display = createBlockDisplay(world, location.clone().add(offsets.get(i)), material, scale);
             display.setGlowing(true);
-        }
-        displayIds.clear();
-        for (BlockDisplay display : displays) {
-            displayIds.add(display.getUniqueId());
+            displayShards.add(new DisplayShard(
+                display.getUniqueId(),
+                offsets.get(i),
+                0.06f + (random.nextFloat() * 0.04f),
+                0.12f + (random.nextFloat() * 0.1f),
+                0.12f + (random.nextFloat() * 0.08f),
+                random.nextInt(360)
+            ));
         }
     }
 
@@ -209,30 +229,45 @@ public class MeteorController {
         display.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
         Transformation transformation = display.getTransformation();
         transformation.getScale().set(new Vector3f(scale, scale, scale));
+        transformation.getLeftRotation().set(new Quaternionf().rotationXYZ(
+            random.nextFloat(),
+            random.nextFloat(),
+            random.nextFloat()
+        ));
         display.setTransformation(transformation);
         return display;
     }
 
-    private void moveDisplays(Location location) {
-        if (displayIds.isEmpty()) {
+    private void moveDisplays(Location location, int ticks) {
+        if (displayShards.isEmpty()) {
             return;
         }
-        for (UUID id : displayIds) {
-            var entity = plugin.getServer().getEntity(id);
+        for (DisplayShard shard : displayShards) {
+            var entity = plugin.getServer().getEntity(shard.id());
             if (entity instanceof BlockDisplay display) {
-                display.teleport(location);
+                double wobble = Math.sin((ticks + shard.phase()) * shard.wobbleSpeed()) * shard.wobbleAmplitude();
+                Location adjusted = location.clone().add(
+                    shard.offset().getX(),
+                    shard.offset().getY() + wobble,
+                    shard.offset().getZ()
+                );
+                display.teleport(adjusted);
+                float angle = (ticks + shard.phase()) * shard.spinSpeed();
+                Transformation transformation = display.getTransformation();
+                transformation.getLeftRotation().set(new Quaternionf().rotationXYZ(angle, angle * 0.7f, angle * 0.4f));
+                display.setTransformation(transformation);
             }
         }
     }
 
     private void removeDisplays() {
-        for (UUID id : displayIds) {
-            var entity = plugin.getServer().getEntity(id);
+        for (DisplayShard shard : displayShards) {
+            var entity = plugin.getServer().getEntity(shard.id());
             if (entity != null) {
                 entity.remove();
             }
         }
-        displayIds.clear();
+        displayShards.clear();
     }
 
     private void applyScreenShake(World world, Location location, double radius) {
@@ -313,6 +348,18 @@ public class MeteorController {
                 Particle radiationParticle = resolveParticle("SPELL_MOB_AMBIENT", "SPELL_MOB", "AMBIENT_ENTITY_EFFECT");
                 if (radiationParticle != null) {
                     world.spawnParticle(radiationParticle, target, 12, 0.6, 0.8, 0.6, 0.02);
+                }
+                Particle coreParticle = resolveParticle("REDSTONE", "DUST");
+                if (coreParticle != null) {
+                    world.spawnParticle(
+                        coreParticle,
+                        target.clone().add(0, 0.8, 0),
+                        8,
+                        0.35,
+                        0.35,
+                        0.35,
+                        new Particle.DustOptions(Color.LIME, 1.4f)
+                    );
                 }
                 for (Player player : world.getPlayers()) {
                     double distanceSquared = player.getLocation().distanceSquared(target);
@@ -482,4 +529,13 @@ public class MeteorController {
         }
         return null;
     }
+
+    private record DisplayShard(
+        UUID id,
+        Vector offset,
+        float spinSpeed,
+        float wobbleSpeed,
+        float wobbleAmplitude,
+        int phase
+    ) {}
 }
