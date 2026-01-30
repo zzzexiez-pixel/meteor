@@ -45,6 +45,7 @@ public class MeteorController {
     private BukkitRunnable exposureTask;
     private BukkitRunnable damageTask;
     private BukkitRunnable visualTask;
+    private BukkitRunnable sculkTask;
     private BukkitRunnable domeTask;
     private List<Vector> domeOffsets;
 
@@ -331,6 +332,7 @@ public class MeteorController {
 
         createCrater(center);
         applyImpactShake(center);
+        startSculkSpread(center, explosionPower);
         startRadiationTasks();
         scheduleDomeChecks();
     }
@@ -410,6 +412,95 @@ public class MeteorController {
             }
         };
         visualTask.runTaskTimer(plugin, 0L, 20L);
+    }
+
+    private void startSculkSpread(Location center, float explosionPower) {
+        boolean enabled = plugin.getConfig().getBoolean("meteor.radiation.sculk.enabled", true);
+        double minExplosionPower = plugin.getConfig().getDouble("meteor.radiation.sculk.min-explosion-power", 6.0);
+        if (!enabled || explosionPower < minExplosionPower) {
+            return;
+        }
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        int radius = plugin.getConfig().getInt("meteor.radiation.sculk.radius", 18);
+        int blocksPerStep = plugin.getConfig().getInt("meteor.radiation.sculk.blocks-per-step", 6);
+        int intervalSeconds = plugin.getConfig().getInt("meteor.radiation.sculk.interval-seconds", 8);
+        List<Material> replaceable = resolveMaterials(
+            plugin.getConfig().getStringList("meteor.radiation.sculk.replaceable-blocks"),
+            List.of(
+                Material.STONE,
+                Material.DEEPSLATE,
+                Material.DIRT,
+                Material.GRASS_BLOCK,
+                Material.ANDESITE,
+                Material.DIORITE,
+                Material.GRANITE,
+                Material.TUFF
+            )
+        );
+
+        List<Location> targets = new ArrayList<>();
+        int originX = center.getBlockX();
+        int originZ = center.getBlockZ();
+        int radiusSquared = radius * radius;
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                int distance = x * x + z * z;
+                if (distance > radiusSquared) {
+                    continue;
+                }
+                int blockX = originX + x;
+                int blockZ = originZ + z;
+                int highestY = world.getHighestBlockYAt(blockX, blockZ);
+                Block block = world.getBlockAt(blockX, highestY, blockZ);
+                if (replaceable.contains(block.getType())) {
+                    targets.add(block.getLocation());
+                }
+            }
+        }
+        if (targets.isEmpty()) {
+            return;
+        }
+        Collections.shuffle(targets);
+        if (sculkTask != null) {
+            sculkTask.cancel();
+        }
+        sculkTask = new BukkitRunnable() {
+            int index = 0;
+
+            @Override
+            public void run() {
+                int placed = 0;
+                while (placed < blocksPerStep && index < targets.size()) {
+                    Location location = targets.get(index++);
+                    if (!world.isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4)) {
+                        continue;
+                    }
+                    Block block = world.getBlockAt(location);
+                    if (!replaceable.contains(block.getType())) {
+                        continue;
+                    }
+                    block.setType(Material.SCULK, false);
+                    Block above = block.getRelative(0, 1, 0);
+                    if (above.getType() == Material.AIR && Math.random() < 0.3) {
+                        above.setType(Material.SCULK_VEIN, false);
+                    }
+                    placed++;
+                }
+                if (index >= targets.size()) {
+                    cancel();
+                }
+            }
+
+            @Override
+            public void cancel() {
+                super.cancel();
+                sculkTask = null;
+            }
+        };
+        sculkTask.runTaskTimer(plugin, 20L, intervalSeconds * 20L);
     }
 
     private void applyRadiationExposure(Location center, double radius) {
@@ -737,6 +828,9 @@ public class MeteorController {
         }
         if (visualTask != null) {
             visualTask.cancel();
+        }
+        if (sculkTask != null) {
+            sculkTask.cancel();
         }
     }
 
