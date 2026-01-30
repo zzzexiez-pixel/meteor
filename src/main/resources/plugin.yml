@@ -12,6 +12,10 @@ commands:
     description: Проверка радиации
     usage: "/radiation check"
     permission: meteor.use
+  research:
+    description: Архив исследований метеорита
+    usage: "/research [list <page>|show <id>]"
+    permission: meteor.use
 permissions:
   meteor.admin:
     description: Разрешает запускать и останавливать метеорит
