@@ -4,11 +4,18 @@ main: com.example.meteor.MeteorPlugin
 api-version: "1.21"
 author: OpenAI
 commands:
-  meteor:
-    description: Управление метеоритом
-    usage: "/meteor <start|stop> [x y z]"
+  admin:
+    description: Административные команды
+    usage: "/admin meteor <start|stop> [x] [z]"
+    permission: meteor.admin
+  radiation:
+    description: Проверка радиации
+    usage: "/radiation check"
     permission: meteor.use
 permissions:
-  meteor.use:
-    description: Разрешает использовать команду /meteor
+  meteor.admin:
+    description: Разрешает запускать и останавливать метеорит
     default: op
+  meteor.use:
+    description: Разрешает проверять купол радиации
+    default: true
