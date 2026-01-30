@@ -133,7 +133,9 @@ public class MeteorManager {
         }
         int height = config.getInt("meteor.flight.height", 200);
         int durationSeconds = config.getInt("meteor.flight.duration-seconds", 10);
+        double bodyRadius = config.getDouble("meteor.flight.body-radius", 2.1);
         List<Particle> trailParticles = ConfigHelper.readParticles(config, "meteor.flight.trail-particles");
+        List<Material> bodyMaterials = readMaterials(config.getStringList("meteor.flight.body-materials"), List.of(Material.MAGMA_BLOCK));
         Sound whistle = ConfigHelper.safeSound(config.getString("meteor.flight.whistle-sound"), Sound.ENTITY_ARROW_SHOOT);
         Sound rumble = ConfigHelper.safeSound(config.getString("meteor.flight.rumble-sound"), Sound.ENTITY_PHANTOM_FLAP);
         Sound approach = ConfigHelper.safeSound(config.getString("meteor.flight.approach-sound"), Sound.ENTITY_GHAST_SHOOT);
@@ -141,46 +143,52 @@ public class MeteorManager {
         Location start = impactLocation.clone();
         start.set(impactLocation.getX(), startY, impactLocation.getZ());
 
-        ArmorStand meteor = (ArmorStand) world.spawnEntity(start, EntityType.ARMOR_STAND);
-        meteor.setInvisible(true);
-        meteor.setMarker(true);
-        meteor.setGravity(false);
-        meteor.getEquipment().setHelmet(new ItemStack(Material.MAGMA_BLOCK));
+        List<Vector> meteorOffsets = buildMeteorOffsets(bodyRadius);
+        List<ArmorStand> meteorPieces = spawnMeteorPieces(world, start, meteorOffsets, bodyMaterials);
 
         double totalTicks = durationSeconds * 20.0;
         Vector step = new Vector(0, -(height / totalTicks), 0);
 
         flightTask = new BukkitRunnable() {
             int tick = 0;
+            Location base = start.clone();
 
             @Override
             public void run() {
-                if (!running || meteor.isDead()) {
-                    meteor.remove();
+                if (!running || meteorPieces.isEmpty()) {
+                    removeMeteorPieces(meteorPieces);
                     cancel();
                     return;
                 }
+                for (ArmorStand piece : meteorPieces) {
+                    if (piece.isDead()) {
+                        removeMeteorPieces(meteorPieces);
+                        cancel();
+                        return;
+                    }
+                }
                 if (tick == 0) {
-                    world.playSound(meteor.getLocation(), whistle, 3.0f, 0.7f);
+                    world.playSound(base, whistle, 3.0f, 0.7f);
                 }
                 if (tick % 10 == 0) {
                     float volume = Math.min(4.0f, 1.2f + (tick / (float) totalTicks) * 2.0f);
-                    world.playSound(meteor.getLocation(), rumble, volume, 0.7f);
-                    world.playSound(meteor.getLocation(), approach, volume * 0.6f, 0.5f);
+                    world.playSound(base, rumble, volume, 0.7f);
+                    world.playSound(base, approach, volume * 0.6f, 0.5f);
                 }
                 if (tick >= totalTicks) {
-                    meteor.remove();
+                    removeMeteorPieces(meteorPieces);
                     cancel();
                     impact();
                     return;
                 }
-                Location current = meteor.getLocation().add(step);
-                meteor.teleport(current);
+                base = base.add(step);
+                teleportMeteorPieces(base, meteorPieces, meteorOffsets);
                 for (Particle particle : trailParticles) {
-                    world.spawnParticle(particle, current, 12, 0.3, 0.3, 0.3, 0.02);
+                    world.spawnParticle(particle, base, 18, bodyRadius * 0.3, bodyRadius * 0.3, bodyRadius * 0.3, 0.03);
                 }
-                spawnFlightSpiral(world, current, tick);
-                world.spawnParticle(Particle.LAVA, current, 4, 0.2, 0.2, 0.2, 0.01);
+                spawnFlightSpiral(world, base, tick);
+                spawnFlightAura(world, base, tick, bodyRadius);
+                world.spawnParticle(Particle.LAVA, base, 10, bodyRadius * 0.2, bodyRadius * 0.2, bodyRadius * 0.2, 0.02);
                 tick++;
             }
         }.runTaskTimer(plugin, 0L, 1L);
@@ -234,6 +242,7 @@ public class MeteorManager {
         triggerShockwave(config, world);
         createCrater(config, world);
         igniteCraterRim(config, world);
+        launchDebrisBurst(config, world);
         shakePlayers(config, world);
         applyScreenShake(config, world);
 
@@ -365,6 +374,36 @@ public class MeteorManager {
         }
     }
 
+    private void launchDebrisBurst(FileConfiguration config, World world) {
+        int burstCount = config.getInt("meteor.impact.debris-burst-count", 80);
+        double burstRadius = config.getDouble("meteor.impact.debris-burst-radius", 6.0);
+        double burstSpeed = config.getDouble("meteor.impact.debris-burst-speed", 0.65);
+        List<Material> materials = readMaterials(
+            config.getStringList("meteor.impact.debris-materials"),
+            List.of(Material.COBBLED_DEEPSLATE, Material.BLACKSTONE)
+        );
+        if (materials.isEmpty()) {
+            return;
+        }
+        Random random = new Random();
+        for (int i = 0; i < burstCount; i++) {
+            double angle = random.nextDouble() * Math.PI * 2;
+            double distance = random.nextDouble() * burstRadius;
+            double x = impactLocation.getX() + Math.cos(angle) * distance;
+            double z = impactLocation.getZ() + Math.sin(angle) * distance;
+            double y = impactLocation.getY() + 1.5 + random.nextDouble() * 2.0;
+            Location spawn = new Location(world, x, y, z);
+            Material material = materials.get(random.nextInt(materials.size()));
+            var falling = world.spawnFallingBlock(spawn, material.createBlockData());
+            falling.setDropItem(false);
+            Vector velocity = spawn.toVector().subtract(impactLocation.toVector()).normalize().multiply(burstSpeed);
+            velocity.setY(0.45 + random.nextDouble() * 0.6);
+            falling.setVelocity(velocity);
+        }
+        world.spawnParticle(Particle.EXPLOSION, impactLocation, 6, 2.0, 1.0, 2.0, 0.02);
+        world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, impactLocation, 18, 2.0, 1.2, 2.0, 0.01);
+    }
+
     private void igniteCraterRim(FileConfiguration config, World world) {
         int fireRadius = config.getInt("meteor.impact.fire-radius", 14);
         double fireChance = config.getDouble("meteor.impact.fire-chance", 0.35);
@@ -475,6 +514,64 @@ public class MeteorManager {
         Location spiral = current.clone().add(x, 0.1, z);
         world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, spiral, 6, 0.1, 0.1, 0.1, 0.01);
         world.spawnParticle(Particle.FLAME, spiral, 4, 0.05, 0.05, 0.05, 0.0);
+    }
+
+    private void spawnFlightAura(World world, Location current, int tick, double bodyRadius) {
+        double angle = tick * 0.2;
+        double ringRadius = bodyRadius * 0.8 + Math.sin(tick * 0.15) * 0.2;
+        for (int i = 0; i < 3; i++) {
+            double offsetAngle = angle + i * (Math.PI * 2 / 3);
+            double x = Math.cos(offsetAngle) * ringRadius;
+            double z = Math.sin(offsetAngle) * ringRadius;
+            Location aura = current.clone().add(x, 0.2, z);
+            world.spawnParticle(Particle.DRAGON_BREATH, aura, 4, 0.1, 0.1, 0.1, 0.01);
+            world.spawnParticle(Particle.SMOKE_NORMAL, aura, 6, 0.12, 0.12, 0.12, 0.02);
+        }
+    }
+
+    private List<Vector> buildMeteorOffsets(double bodyRadius) {
+        double offset = Math.max(0.6, bodyRadius * 0.55);
+        double top = bodyRadius * 0.6;
+        return List.of(
+            new Vector(0, 0, 0),
+            new Vector(offset, 0, 0),
+            new Vector(-offset, 0, 0),
+            new Vector(0, 0, offset),
+            new Vector(0, 0, -offset),
+            new Vector(offset * 0.7, 0, offset * 0.7),
+            new Vector(-offset * 0.7, 0, -offset * 0.7),
+            new Vector(0, top, 0),
+            new Vector(0, -top * 0.4, 0)
+        );
+    }
+
+    private List<ArmorStand> spawnMeteorPieces(World world, Location base, List<Vector> offsets, List<Material> materials) {
+        List<ArmorStand> pieces = new ArrayList<>();
+        Random random = new Random();
+        for (Vector offset : offsets) {
+            Location spawn = base.clone().add(offset);
+            ArmorStand meteor = (ArmorStand) world.spawnEntity(spawn, EntityType.ARMOR_STAND);
+            meteor.setInvisible(true);
+            meteor.setMarker(true);
+            meteor.setGravity(false);
+            meteor.getEquipment().setHelmet(new ItemStack(materials.get(random.nextInt(materials.size()))));
+            pieces.add(meteor);
+        }
+        return pieces;
+    }
+
+    private void teleportMeteorPieces(Location base, List<ArmorStand> pieces, List<Vector> offsets) {
+        for (int i = 0; i < pieces.size(); i++) {
+            ArmorStand piece = pieces.get(i);
+            Vector offset = offsets.get(i);
+            piece.teleport(base.clone().add(offset));
+        }
+    }
+
+    private void removeMeteorPieces(List<ArmorStand> pieces) {
+        for (ArmorStand piece : pieces) {
+            piece.remove();
+        }
     }
 
     private World resolveWorld(CommandSender sender, boolean immediate) {

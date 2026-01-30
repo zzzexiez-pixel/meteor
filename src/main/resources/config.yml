@@ -11,6 +11,12 @@ meteor:
   flight:
     height: 200
     duration-seconds: 10
+    body-radius: 2.1
+    body-materials:
+      - "MAGMA_BLOCK"
+      - "CRYING_OBSIDIAN"
+      - "BLACKSTONE"
+      - "OBSIDIAN"
     trail-particles:
       - "FLAME"
       - "SMOKE_LARGE"
@@ -34,9 +40,9 @@ meteor:
     shockwave-radius: 18.0
     shockwave-steps: 12
     shockwave-points: 40
-    crater-size: 16
-    crater-depth: 22
-    crater-rim-height: 3
+    crater-size: 22
+    crater-depth: 30
+    crater-rim-height: 4
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -44,14 +50,19 @@ meteor:
       - "BLACKSTONE"
       - "BASALT"
       - "DEEPSLATE"
-    debris-radius: 28
-    debris-count: 90
+    debris-radius: 40
+    debris-count: 160
     debris-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
       - "BLACKSTONE"
       - "COBBLED_DEEPSLATE"
       - "NETHERRACK"
+      - "BASALT"
+      - "TUFF"
+    debris-burst-count: 80
+    debris-burst-radius: 6.0
+    debris-burst-speed: 0.65
     fire-radius: 14
     fire-chance: 0.35
     magma-chance-percent: 12
@@ -75,11 +86,11 @@ meteor:
     sculk:
       enabled: true
       min-explosion-power: 6.0
-      start-radius: 10
-      max-radius: 24
+      start-radius: 12
+      max-radius: 40
       grow-duration-seconds: 600
-      blocks-per-step: 6
-      interval-seconds: 8
+      blocks-per-step: 12
+      interval-seconds: 6
       replaceable-blocks:
         - "STONE"
         - "DEEPSLATE"
