@@ -319,10 +319,7 @@ public class MeteorController {
         }
         Sound impactSound = resolveSound(plugin.getConfig().getString("meteor.impact.sound", "ENTITY_GENERIC_EXPLODE"));
         world.playSound(center, impactSound, 2.0f, 0.8f);
-        Particle explosion = resolveParticle("EXPLOSION", "EXPLOSION_HUGE", "EXPLOSION_LARGE");
-        if (explosion != null) {
-            world.spawnParticle(explosion, center, 8, 1.5, 1.5, 1.5, 0.1);
-        }
+        startImpactEffects(center);
         float explosionPower = (float) plugin.getConfig().getDouble("meteor.impact.explosion-power", 4.0);
         boolean explosionFire = plugin.getConfig().getBoolean("meteor.impact.explosion-fire", false);
         boolean explosionBreakBlocks = plugin.getConfig().getBoolean("meteor.impact.explosion-break-blocks", false);
@@ -335,6 +332,69 @@ public class MeteorController {
         startSculkSpread(center, explosionPower);
         startRadiationTasks();
         scheduleDomeChecks();
+    }
+
+    private void startImpactEffects(Location center) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        int flashCount = plugin.getConfig().getInt("meteor.impact.flash-count", 8);
+        double flashRadius = plugin.getConfig().getDouble("meteor.impact.flash-radius", 60.0);
+        int flashBlindness = plugin.getConfig().getInt("meteor.impact.flash-blindness-ticks", 20);
+        double shockwaveRadius = plugin.getConfig().getDouble("meteor.impact.shockwave-radius", 18.0);
+        int shockwaveSteps = plugin.getConfig().getInt("meteor.impact.shockwave-steps", 12);
+        int shockwavePoints = plugin.getConfig().getInt("meteor.impact.shockwave-points", 40);
+        Particle flash = resolveParticle("FLASH", "EXPLOSION_NORMAL", "EXPLOSION");
+        Particle explosion = resolveParticle("EXPLOSION", "EXPLOSION_HUGE", "EXPLOSION_LARGE");
+        Particle smoke = resolveParticle("SMOKE_LARGE", "SMOKE_NORMAL", "CLOUD");
+        Particle shockwaveParticle = resolveParticle("CLOUD", "SMOKE_LARGE", "SMOKE_NORMAL");
+        PotionEffectType blindness = resolvePotionEffectType("BLINDNESS");
+
+        if (flash != null) {
+            world.spawnParticle(flash, center, flashCount, 2.5, 2.5, 2.5, 0.0);
+        }
+        if (explosion != null) {
+            world.spawnParticle(explosion, center, 12, 2.2, 1.5, 2.2, 0.1);
+        }
+        if (smoke != null) {
+            world.spawnParticle(smoke, center, 40, 3.5, 1.8, 3.5, 0.05);
+        }
+
+        for (Player player : world.getPlayers()) {
+            if (!isWithinRadius(player.getLocation(), center, flashRadius)) {
+                continue;
+            }
+            if (flash != null) {
+                player.spawnParticle(flash, player.getEyeLocation(), flashCount, 0.6, 0.6, 0.6, 0.0);
+            }
+            if (blindness != null && flashBlindness > 0) {
+                player.addPotionEffect(new PotionEffect(blindness, flashBlindness, 0, true, false, true));
+            }
+        }
+
+        if (shockwaveParticle != null && shockwaveSteps > 0 && shockwavePoints > 0) {
+            BukkitTask task = new BukkitRunnable() {
+                int step = 0;
+
+                @Override
+                public void run() {
+                    double currentRadius = shockwaveRadius * (step + 1) / shockwaveSteps;
+                    for (int i = 0; i < shockwavePoints; i++) {
+                        double angle = (2 * Math.PI / shockwavePoints) * i;
+                        double x = Math.cos(angle) * currentRadius;
+                        double z = Math.sin(angle) * currentRadius;
+                        Location point = center.clone().add(x, 0.2, z);
+                        world.spawnParticle(shockwaveParticle, point, 2, 0.2, 0.05, 0.2, 0.0);
+                    }
+                    step++;
+                    if (step >= shockwaveSteps) {
+                        cancel();
+                    }
+                }
+            }.runTaskTimer(plugin, 0L, 2L);
+            scheduledTasks.add(task);
+        }
     }
 
     private void createCrater(Location center) {
@@ -679,16 +739,42 @@ public class MeteorController {
     private void applyImpactShake(Location center) {
         double radius = plugin.getConfig().getDouble("meteor.impact.shake-radius", 50.0);
         int duration = plugin.getConfig().getInt("meteor.impact.shake-duration-ticks", 60);
+        double intensity = plugin.getConfig().getDouble("meteor.impact.shake-intensity", 6.0);
         PotionEffectType nausea = resolvePotionEffectType("NAUSEA", "CONFUSION");
-        if (nausea == null) {
+        PotionEffectType slow = resolvePotionEffectType("SLOW");
+        World world = center.getWorld();
+        if (world == null) {
             return;
         }
-        for (Player player : center.getWorld().getPlayers()) {
-            if (!isWithinRadius(player.getLocation(), center, radius)) {
-                continue;
+        BukkitTask task = new BukkitRunnable() {
+            int tick = 0;
+
+            @Override
+            public void run() {
+                for (Player player : world.getPlayers()) {
+                    if (!isWithinRadius(player.getLocation(), center, radius)) {
+                        continue;
+                    }
+                    if (nausea != null) {
+                        player.addPotionEffect(new PotionEffect(nausea, duration, 0, true, false, true));
+                    }
+                    if (slow != null) {
+                        player.addPotionEffect(new PotionEffect(slow, duration, 0, true, false, true));
+                    }
+                    float yawJitter = (float) ((Math.random() - 0.5) * intensity);
+                    float pitchJitter = (float) ((Math.random() - 0.5) * intensity);
+                    Location view = player.getLocation().clone();
+                    view.setYaw(view.getYaw() + yawJitter);
+                    view.setPitch(Math.max(-89.9f, Math.min(89.9f, view.getPitch() + pitchJitter)));
+                    player.teleport(view);
+                }
+                tick += 2;
+                if (tick >= duration) {
+                    cancel();
+                }
             }
-            player.addPotionEffect(new PotionEffect(nausea, duration, 0, true, false, true));
-        }
+        }.runTaskTimer(plugin, 0L, 2L);
+        scheduledTasks.add(task);
     }
 
     private boolean isWithinRadius(Location location, Location center, double radius) {
