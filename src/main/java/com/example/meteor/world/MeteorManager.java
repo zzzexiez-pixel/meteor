@@ -225,6 +225,10 @@ public class MeteorManager {
         int steps = config.getInt("meteor.impact.shockwave-steps", 12);
         int points = config.getInt("meteor.impact.shockwave-points", 40);
         double radius = config.getDouble("meteor.impact.shockwave-radius", 18.0);
+        Particle spark = ConfigHelper.safeParticle("FIREWORKS_SPARK");
+        if (spark == null) {
+            spark = ConfigHelper.safeParticle("FIREWORK");
+        }
         for (int step = 0; step < steps; step++) {
             double currentRadius = radius * ((double) step / steps);
             int delay = step * 4;
@@ -235,7 +239,9 @@ public class MeteorManager {
                     double z = impactLocation.getZ() + Math.sin(angle) * currentRadius;
                     Location particleLoc = new Location(world, x, impactLocation.getY() + 0.2, z);
                     world.spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, particleLoc, 3, 0.05, 0.05, 0.05, 0.0);
-                    world.spawnParticle(Particle.FIREWORKS_SPARK, particleLoc, 4, 0.1, 0.1, 0.1, 0.02);
+                    if (spark != null) {
+                        world.spawnParticle(spark, particleLoc, 4, 0.1, 0.1, 0.1, 0.02);
+                    }
                 }
             }, delay);
         }

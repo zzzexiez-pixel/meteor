@@ -45,13 +45,16 @@ public class RadiationZone {
                 int fullHeartInterval = config.getInt("meteor.radiation.damage-heart-interval", 3);
                 Sound hiss = ConfigHelper.safeSound("BLOCK_SCULK_SENSOR_CLICKING", Sound.BLOCK_SCULK_SENSOR_CLICKING);
                 List<Particle> particles = ConfigHelper.readParticles(config, "meteor.core.radiation-particles");
+                PotionEffectType nausea = ConfigHelper.safePotionEffectType("NAUSEA", "CONFUSION");
 
                 for (Player player : world.getPlayers()) {
                     double distanceSq = player.getLocation().distanceSquared(origin);
                     if (distanceSq > radius * radius) {
                         continue;
                     }
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, 60, 0, true, true, true));
+                    if (nausea != null) {
+                        player.addPotionEffect(new PotionEffect(nausea, 60, 0, true, true, true));
+                    }
                     player.spawnParticle(Particle.SPORE_BLOSSOM_AIR, player.getLocation(), 12, 0.7, 1.2, 0.7, 0.02);
                     for (Particle particle : particles) {
                         player.spawnParticle(particle, player.getLocation(), 6, 0.6, 0.8, 0.6, 0.02);
