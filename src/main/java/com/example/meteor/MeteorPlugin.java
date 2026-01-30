@@ -25,6 +25,10 @@ public final class MeteorPlugin extends JavaPlugin {
         if (radiationCommand != null) {
             radiationCommand.setExecutor(new RadiationCommand(meteorController));
         }
+        PluginCommand researchCommand = getCommand("research");
+        if (researchCommand != null) {
+            researchCommand.setExecutor(new ResearchCommand());
+        }
         getServer().getPluginManager().registerEvents(new MeteorListener(meteorController), this);
     }
 
