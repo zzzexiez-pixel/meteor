@@ -34,6 +34,7 @@ meteor:
     explosion-power: 14.0
     explosion-fire: true
     explosion-break-blocks: true
+    force-block-break: true
     flash-count: 8
     flash-radius: 60.0
     flash-blindness-ticks: 20
