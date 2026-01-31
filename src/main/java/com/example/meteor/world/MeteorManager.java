@@ -164,6 +164,9 @@ public class MeteorManager {
 
         double totalTicks = durationSeconds * 20.0;
         Vector step = impactLocation.toVector().subtract(start.toVector()).multiply(1.0 / totalTicks);
+        boolean globalApproachShake = config.getBoolean("meteor.flight.global-shake", true);
+        int approachShakeInterval = Math.max(1, config.getInt("meteor.flight.shake-interval-ticks", 6));
+        double approachShakeIntensity = config.getDouble("meteor.flight.shake-intensity", 2.6);
 
         flightTask = new BukkitRunnable() {
             int tick = 0;
@@ -196,6 +199,10 @@ public class MeteorManager {
                     float volume = Math.min(4.0f, 1.2f + (tick / (float) totalTicks) * 2.0f);
                     world.playSound(base, rumble, volume, 0.7f);
                     world.playSound(base, approach, volume * 0.6f, 0.5f);
+                }
+                if (globalApproachShake && tick % approachShakeInterval == 0) {
+                    double progress = Math.min(1.0, tick / totalTicks);
+                    applyApproachShake(world, approachShakeIntensity * (0.7 + progress));
                 }
                 if (tick >= totalTicks) {
                     removeMeteorPieces(meteorPieces);
@@ -279,8 +286,8 @@ public class MeteorManager {
             impactLocation.getBlockX(),
             impactLocation.getBlockY(),
             impactLocation.getBlockZ(),
-            "Метеорит с мощным радиационным ядром. Образован гигантский кратер, вокруг разбросаны обожжённые породы. " +
-                "Свидетели сообщают о сияющей хвостовой вуали и раскатах, похожих на песню пустоты."
+            "Метеорит с бедроковым радиационным ядром. Образован гигантский кратер, вокруг разбросаны обожжённые породы. " +
+                "Свидетели сообщают о дрожащей земле, сияющей хвостовой вуали и раскатах, похожих на песню пустоты."
         );
 
         Bukkit.broadcastMessage("§4☄ Метеорит упал! Радиоактивная зона сформирована.");
@@ -525,6 +532,8 @@ public class MeteorManager {
         }
         world.spawnParticle(Particle.EXPLOSION, impactLocation, 6, 2.0, 1.0, 2.0, 0.02);
         world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, impactLocation, 18, 2.0, 1.2, 2.0, 0.01);
+        world.spawnParticle(Particle.FLAME, impactLocation, 26, 2.4, 1.2, 2.4, 0.04);
+        world.spawnParticle(Particle.LAVA, impactLocation, 16, 1.6, 0.8, 1.6, 0.03);
     }
 
     private void igniteCraterRim(FileConfiguration config, World world) {
@@ -561,11 +570,12 @@ public class MeteorManager {
     }
 
     private void shakePlayers(FileConfiguration config, World world) {
+        boolean globalShake = config.getBoolean("meteor.impact.global-shake", true);
         double radius = config.getDouble("meteor.impact.shake-radius", 50.0);
         int duration = config.getInt("meteor.impact.shake-duration-ticks", 60);
         double intensity = config.getDouble("meteor.impact.shake-intensity", 6.0);
         for (Player player : world.getPlayers()) {
-            if (player.getLocation().distanceSquared(impactLocation) <= radius * radius) {
+            if (globalShake || player.getLocation().distanceSquared(impactLocation) <= radius * radius) {
                 Vector knock = player.getLocation().toVector().subtract(impactLocation.toVector()).normalize().multiply(intensity / 10.0).setY(0.6);
                 player.setVelocity(knock);
                 player.sendMessage("§cУдарная волна сбила с ног!");
@@ -573,7 +583,7 @@ public class MeteorManager {
         }
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             for (Player player : world.getPlayers()) {
-                if (player.getLocation().distanceSquared(impactLocation) <= radius * radius) {
+                if (globalShake || player.getLocation().distanceSquared(impactLocation) <= radius * radius) {
                     player.spawnParticle(Particle.ASH, player.getLocation(), 20, 0.5, 0.5, 0.5, 0.02);
                 }
             }
@@ -581,6 +591,7 @@ public class MeteorManager {
     }
 
     private void applyScreenShake(FileConfiguration config, World world) {
+        boolean globalShake = config.getBoolean("meteor.impact.global-shake", true);
         double radius = config.getDouble("meteor.impact.shake-radius", 50.0);
         int duration = config.getInt("meteor.impact.shake-duration-ticks", 60);
         double intensity = config.getDouble("meteor.impact.shake-intensity", 6.0);
@@ -590,7 +601,7 @@ public class MeteorManager {
             @Override
             public void run() {
                 for (Player player : world.getPlayers()) {
-                    if (player.getLocation().distanceSquared(impactLocation) > radius * radius) {
+                    if (!globalShake && player.getLocation().distanceSquared(impactLocation) > radius * radius) {
                         continue;
                     }
                     Location view = player.getLocation().clone();
@@ -619,6 +630,8 @@ public class MeteorManager {
         Block coreBlock = world.getBlockAt(impactLocation);
         coreBlock.setType(material);
         world.spawnParticle(Particle.END_ROD, impactLocation, 40, 1.0, 1.0, 1.0, 0.02);
+        world.spawnParticle(Particle.SCULK_SOUL, impactLocation, 32, 0.8, 1.2, 0.8, 0.01);
+        world.spawnParticle(Particle.PORTAL, impactLocation, 60, 1.4, 1.2, 1.4, 0.02);
     }
 
     private void startRadiation(FileConfiguration config) {
@@ -664,10 +677,24 @@ public class MeteorManager {
     private void spawnImpactResidue(World world) {
         Particle smoke = resolveParticle("SMOKE_LARGE", "LARGE_SMOKE", "SMOKE_NORMAL", "SMOKE");
         if (smoke != null) {
-            world.spawnParticle(smoke, impactLocation, 80, 3.5, 1.2, 3.5, 0.02);
+            world.spawnParticle(smoke, impactLocation, 140, 4.2, 1.6, 4.2, 0.03);
         }
-        world.spawnParticle(Particle.ASH, impactLocation, 120, 4.0, 1.0, 4.0, 0.01);
-        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 50, 2.5, 0.8, 2.5, 0.02);
+        world.spawnParticle(Particle.ASH, impactLocation, 200, 4.8, 1.2, 4.8, 0.02);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 90, 3.0, 1.0, 3.0, 0.03);
+        world.spawnParticle(Particle.FLAME, impactLocation, 120, 3.4, 1.1, 3.4, 0.04);
+        world.spawnParticle(Particle.LAVA, impactLocation, 70, 2.8, 0.6, 2.8, 0.02);
+    }
+
+    private void applyApproachShake(World world, double intensity) {
+        for (Player player : world.getPlayers()) {
+            Location view = player.getLocation().clone();
+            float yawJitter = (float) ((Math.random() - 0.5) * intensity);
+            float pitchJitter = (float) ((Math.random() - 0.5) * intensity);
+            view.setYaw(view.getYaw() + yawJitter);
+            view.setPitch(Math.max(-89.9f, Math.min(89.9f, view.getPitch() + pitchJitter)));
+            player.teleport(view);
+            player.spawnParticle(Particle.ASH, player.getLocation(), 6, 0.3, 0.3, 0.3, 0.01);
+        }
     }
 
     private Particle resolveParticle(String... names) {
