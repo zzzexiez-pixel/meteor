@@ -7,6 +7,10 @@ meteor:
     - 5
   warning-title: "§6☄ Метеорит приближается!"
   warning-subtitle: "Падение через %time% в районе X:%x% Z:%z%"
+  lore-messages:
+    - "§6Летопись небес: раскалённый странник пробил своды мира."
+    - "§6Хроники клана: в этот день небо разломилось, а камень запел."
+    - "§6Сказания мастеров: огненный камень сам выбрал место падения."
 
   flight:
     height: 200
@@ -14,9 +18,11 @@ meteor:
     body-radius: 2.1
     horizontal-offset: 32.0
     free-horizontal-offset: 52.0
+    curve-strength: 1.35
     global-shake: true
     shake-interval-ticks: 6
     shake-intensity: 2.6
+    shake-radius: 120.0
     body-materials:
       - "MAGMA_BLOCK"
       - "CRYING_OBSIDIAN"
@@ -88,6 +94,10 @@ meteor:
     display-name: "§aРадиоактивный метеорит"
     block-material: "BEDROCK"
     custom-model-data: 0
+    lore:
+      - "§7Осколок, переживший падение с небес."
+      - "§7Грохот ещё звучит в камне."
+      - "§7Держит тепло, как сердце мира."
     radiation-emission-count: 18
     radiation-emission-radius: 1.4
     radiation-particles:
