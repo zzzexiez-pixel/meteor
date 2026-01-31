@@ -655,13 +655,30 @@ public class MeteorManager {
     private void spawnFlightEmbers(World world, Location current, double bodyRadius) {
         world.spawnParticle(Particle.ASH, current, 12, bodyRadius * 0.4, bodyRadius * 0.2, bodyRadius * 0.4, 0.01);
         world.spawnParticle(Particle.SOUL_FIRE_FLAME, current, 8, bodyRadius * 0.3, bodyRadius * 0.3, bodyRadius * 0.3, 0.01);
-        world.spawnParticle(Particle.SMOKE_LARGE, current, 6, bodyRadius * 0.3, bodyRadius * 0.2, bodyRadius * 0.3, 0.02);
+        Particle smoke = resolveParticle("SMOKE_LARGE", "LARGE_SMOKE", "SMOKE_NORMAL", "SMOKE");
+        if (smoke != null) {
+            world.spawnParticle(smoke, current, 6, bodyRadius * 0.3, bodyRadius * 0.2, bodyRadius * 0.3, 0.02);
+        }
     }
 
     private void spawnImpactResidue(World world) {
-        world.spawnParticle(Particle.SMOKE_LARGE, impactLocation, 80, 3.5, 1.2, 3.5, 0.02);
+        Particle smoke = resolveParticle("SMOKE_LARGE", "LARGE_SMOKE", "SMOKE_NORMAL", "SMOKE");
+        if (smoke != null) {
+            world.spawnParticle(smoke, impactLocation, 80, 3.5, 1.2, 3.5, 0.02);
+        }
         world.spawnParticle(Particle.ASH, impactLocation, 120, 4.0, 1.0, 4.0, 0.01);
         world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 50, 2.5, 0.8, 2.5, 0.02);
+    }
+
+    private Particle resolveParticle(String... names) {
+        for (String name : names) {
+            try {
+                return Particle.valueOf(name);
+            } catch (IllegalArgumentException ignored) {
+                // Try next fallback.
+            }
+        }
+        return null;
     }
 
     private List<Vector> buildMeteorOffsets(double bodyRadius) {
