@@ -281,13 +281,14 @@ public class MeteorController {
         );
 
         Vector offset = randomHorizontalOffset(horizontalOffset);
-        Location start = center.clone().add(offset);
-        start.setY(flightHeight);
+        Location startLocation = center.clone().add(offset);
+        startLocation.setY(flightHeight);
         if (Math.random() < 0.35) {
             Vector free = randomHorizontalOffset(freeOffset);
-            start = center.clone().add(free);
-            start.setY(flightHeight);
+            startLocation = center.clone().add(free);
+            startLocation.setY(flightHeight);
         }
+        final Location start = startLocation;
         DragonFireball fireball = (DragonFireball) world.spawnEntity(start, EntityType.DRAGON_FIREBALL);
         fireball.setIsIncendiary(false);
         fireball.setYield(0);
