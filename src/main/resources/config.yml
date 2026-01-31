@@ -31,7 +31,7 @@ meteor:
     landing-sound: "BLOCK_ANVIL_LAND"
     explosion-sound: "ENTITY_GENERIC_EXPLODE"
     flash-sound: "ENTITY_LIGHTNING_BOLT_THUNDER"
-    explosion-power: 10.0
+    explosion-power: 14.0
     explosion-fire: true
     explosion-break-blocks: true
     flash-count: 8
@@ -40,9 +40,9 @@ meteor:
     shockwave-radius: 18.0
     shockwave-steps: 12
     shockwave-points: 40
-    crater-size: 22
-    crater-depth: 30
-    crater-rim-height: 4
+    crater-size: 28
+    crater-depth: 36
+    crater-rim-height: 5
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -50,8 +50,13 @@ meteor:
       - "BLACKSTONE"
       - "BASALT"
       - "DEEPSLATE"
-    debris-radius: 40
-    debris-count: 160
+    debris-radius: 55
+    debris-count: 220
+    debris-max-stack: 3
+    debris-cluster-count: 22
+    debris-cluster-radius: 60
+    debris-cluster-size: 14
+    debris-cluster-height: 3
     debris-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -60,7 +65,7 @@ meteor:
       - "NETHERRACK"
       - "BASALT"
       - "TUFF"
-    debris-burst-count: 80
+    debris-burst-count: 120
     debris-burst-radius: 6.0
     debris-burst-speed: 0.65
     fire-radius: 14

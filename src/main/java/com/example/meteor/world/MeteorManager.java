@@ -348,11 +348,13 @@ public class MeteorManager {
             }
         }
         scatterDebris(config, world, debrisMaterials);
+        scatterDebrisClusters(config, world, debrisMaterials);
     }
 
     private void scatterDebris(FileConfiguration config, World world, List<Material> debrisMaterials) {
         int debrisRadius = config.getInt("meteor.impact.debris-radius", 28);
         int debrisCount = config.getInt("meteor.impact.debris-count", 90);
+        int maxStack = Math.max(1, config.getInt("meteor.impact.debris-max-stack", 3));
         if (debrisMaterials.isEmpty()) {
             return;
         }
@@ -366,11 +368,54 @@ public class MeteorManager {
             if (y <= world.getMinHeight()) {
                 continue;
             }
-            Block target = world.getBlockAt(x, y, z);
-            if (!target.isEmpty()) {
+            int stackHeight = 1 + random.nextInt(maxStack);
+            for (int offset = 0; offset < stackHeight; offset++) {
+                Block target = world.getBlockAt(x, y + offset, z);
+                if (!target.isEmpty()) {
+                    break;
+                }
+                target.setType(debrisMaterials.get(random.nextInt(debrisMaterials.size())));
+            }
+        }
+    }
+
+    private void scatterDebrisClusters(FileConfiguration config, World world, List<Material> debrisMaterials) {
+        if (debrisMaterials.isEmpty()) {
+            return;
+        }
+        int clusterCount = config.getInt("meteor.impact.debris-cluster-count", 18);
+        int clusterRadius = config.getInt("meteor.impact.debris-cluster-radius", 50);
+        int clusterSize = Math.max(4, config.getInt("meteor.impact.debris-cluster-size", 12));
+        int clusterHeight = Math.max(1, config.getInt("meteor.impact.debris-cluster-height", 3));
+        Random random = new Random();
+        for (int cluster = 0; cluster < clusterCount; cluster++) {
+            double angle = random.nextDouble() * Math.PI * 2;
+            double distance = Math.pow(random.nextDouble(), 0.4) * clusterRadius;
+            int centerX = impactLocation.getBlockX() + (int) Math.round(Math.cos(angle) * distance);
+            int centerZ = impactLocation.getBlockZ() + (int) Math.round(Math.sin(angle) * distance);
+            int baseY = world.getHighestBlockYAt(centerX, centerZ);
+            if (baseY <= world.getMinHeight()) {
                 continue;
             }
-            target.setType(debrisMaterials.get(random.nextInt(debrisMaterials.size())));
+            int blocksInCluster = clusterSize / 2 + random.nextInt(clusterSize);
+            for (int i = 0; i < blocksInCluster; i++) {
+                int offsetX = random.nextInt(7) - 3;
+                int offsetZ = random.nextInt(7) - 3;
+                int x = centerX + offsetX;
+                int z = centerZ + offsetZ;
+                int topY = world.getHighestBlockYAt(x, z);
+                if (topY <= world.getMinHeight()) {
+                    continue;
+                }
+                int height = 1 + random.nextInt(clusterHeight);
+                for (int h = 0; h < height; h++) {
+                    Block target = world.getBlockAt(x, topY + h, z);
+                    if (!target.isEmpty()) {
+                        break;
+                    }
+                    target.setType(debrisMaterials.get(random.nextInt(debrisMaterials.size())));
+                }
+            }
         }
     }
 
