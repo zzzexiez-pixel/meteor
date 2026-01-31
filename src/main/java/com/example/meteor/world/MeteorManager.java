@@ -208,11 +208,12 @@ public class MeteorManager {
         double explosionPower = config.getDouble("meteor.impact.explosion-power", 10.0);
         boolean explosionFire = config.getBoolean("meteor.impact.explosion-fire", true);
         boolean explosionBreak = config.getBoolean("meteor.impact.explosion-break-blocks", true);
+        boolean forceBlockBreak = config.getBoolean("meteor.impact.force-block-break", true);
 
         world.playSound(impactLocation, landingSound, 3.0f, 0.6f);
         world.playSound(impactLocation, impactSound, 4.0f, 0.6f);
         world.playSound(impactLocation, explosionSound, 5.0f, 0.5f);
-        world.createExplosion(impactLocation.getX(), impactLocation.getY(), impactLocation.getZ(), (float) explosionPower, explosionFire, explosionBreak);
+        applyExplosion(world, explosionPower, explosionFire, explosionBreak, forceBlockBreak);
 
         int flashCount = config.getInt("meteor.impact.flash-count", 8);
         double flashRadius = config.getDouble("meteor.impact.flash-radius", 60.0);
@@ -285,6 +286,48 @@ public class MeteorManager {
                     }
                 }
             }, delay);
+        }
+    }
+
+    private void applyExplosion(World world, double power, boolean fire, boolean breakBlocks, boolean forceBlockBreak) {
+        if (power <= 0) {
+            return;
+        }
+        boolean exploded = world.createExplosion(impactLocation, (float) power, fire, breakBlocks);
+        if (!exploded) {
+            Particle fallbackExplosion = ConfigHelper.safeParticle("EXPLOSION_HUGE");
+            if (fallbackExplosion == null) {
+                fallbackExplosion = ConfigHelper.safeParticle("EXPLOSION_LARGE");
+            }
+            if (fallbackExplosion != null) {
+                world.spawnParticle(fallbackExplosion, impactLocation, 6, 1.5, 1.5, 1.5, 0.05);
+            }
+        }
+        if (breakBlocks && (forceBlockBreak || !exploded)) {
+            int radius = Math.max(1, (int) Math.round(power * 2.0));
+            breakBlocksInRadius(world, radius);
+        }
+    }
+
+    private void breakBlocksInRadius(World world, int radius) {
+        int centerX = impactLocation.getBlockX();
+        int centerY = impactLocation.getBlockY();
+        int centerZ = impactLocation.getBlockZ();
+        int radiusSquared = radius * radius;
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    int distance = x * x + y * y + z * z;
+                    if (distance > radiusSquared) {
+                        continue;
+                    }
+                    Block block = world.getBlockAt(centerX + x, centerY + y, centerZ + z);
+                    if (block.getType() == Material.BEDROCK) {
+                        continue;
+                    }
+                    block.setType(Material.AIR, false);
+                }
+            }
         }
     }
 
