@@ -21,6 +21,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.DragonFireball;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -213,6 +214,15 @@ public class MeteorController {
         }
     }
 
+    private void broadcastLoreMessage() {
+        List<String> messages = plugin.getConfig().getStringList("meteor.lore-messages");
+        if (messages.isEmpty()) {
+            return;
+        }
+        String message = messages.get((int) (Math.random() * messages.size()));
+        Bukkit.broadcastMessage(message);
+    }
+
     private void scheduleCountdowns(Location center, long impactTime) {
         List<Integer> reminderMinutes = plugin.getConfig().getIntegerList("meteor.reminder-times-minutes");
         if (reminderMinutes.isEmpty()) {
@@ -258,24 +268,45 @@ public class MeteorController {
         int flightHeight = plugin.getConfig().getInt("meteor.flight.height", 200);
         int flightSeconds = plugin.getConfig().getInt("meteor.flight.duration-seconds", 10);
         int totalTicks = Math.max(1, flightSeconds * 20);
+        double horizontalOffset = plugin.getConfig().getDouble("meteor.flight.horizontal-offset", 32.0);
+        double freeOffset = plugin.getConfig().getDouble("meteor.flight.free-horizontal-offset", 52.0);
+        double curveStrength = plugin.getConfig().getDouble("meteor.flight.curve-strength", 1.35);
+        boolean globalShake = plugin.getConfig().getBoolean("meteor.flight.global-shake", true);
+        int shakeInterval = plugin.getConfig().getInt("meteor.flight.shake-interval-ticks", 6);
+        double shakeIntensity = plugin.getConfig().getDouble("meteor.flight.shake-intensity", 2.6);
+        int bodyRadius = (int) Math.round(plugin.getConfig().getDouble("meteor.flight.body-radius", 2.1));
+        List<Material> bodyMaterials = resolveMaterials(
+            plugin.getConfig().getStringList("meteor.flight.body-materials"),
+            List.of(Material.MAGMA_BLOCK, Material.CRYING_OBSIDIAN, Material.OBSIDIAN)
+        );
 
-        Location start = new Location(world, center.getX(), flightHeight, center.getZ());
+        Vector offset = randomHorizontalOffset(horizontalOffset);
+        Location start = center.clone().add(offset);
+        start.setY(flightHeight);
+        if (Math.random() < 0.35) {
+            Vector free = randomHorizontalOffset(freeOffset);
+            start = center.clone().add(free);
+            start.setY(flightHeight);
+        }
         DragonFireball fireball = (DragonFireball) world.spawnEntity(start, EntityType.DRAGON_FIREBALL);
         fireball.setIsIncendiary(false);
         fireball.setYield(0);
-
-        Vector step = center.toVector().subtract(start.toVector()).multiply(1.0 / totalTicks);
+        Vector horizontalStep = new Vector(center.getX() - start.getX(), 0, center.getZ() - start.getZ())
+            .multiply(1.0 / totalTicks);
 
         List<Particle> trailParticles = resolveParticles(
             plugin.getConfig().getStringList("meteor.flight.trail-particles"),
             defaultTrailParticles()
         );
         Sound whistle = resolveSound(plugin.getConfig().getString("meteor.flight.whistle-sound", "ENTITY_ARROW_SHOOT"));
+        Sound rumble = resolveSound(plugin.getConfig().getString("meteor.flight.rumble-sound", "ENTITY_PHANTOM_FLAP"));
+        Sound approach = resolveSound(plugin.getConfig().getString("meteor.flight.approach-sound", "ENTITY_GHAST_SHOOT"));
         int flashHeight = plugin.getConfig().getInt("meteor.flight.flash-y", 100);
 
         flightTask = new BukkitRunnable() {
             int tick = 0;
             boolean flashed = false;
+            int shakeTick = 0;
 
             @Override
             public void run() {
@@ -289,7 +320,11 @@ public class MeteorController {
                     impact(center);
                     return;
                 }
-                Location current = fireball.getLocation().add(step);
+                double progress = tick / (double) totalTicks;
+                double curvedY = start.getY() + (center.getY() - start.getY()) * progress
+                    + curveStrength * 12.0 * progress * (progress - 1.0);
+                Location current = fireball.getLocation().add(horizontalStep);
+                current.setY(curvedY);
                 fireball.teleport(current);
                 spawnTrail(world, current, trailParticles);
                 float pitch = 0.5f + (1.5f * tick / totalTicks);
@@ -299,7 +334,19 @@ public class MeteorController {
                     if (flash != null) {
                         world.spawnParticle(flash, current, 4, 0.6, 0.6, 0.6, 0.0);
                     }
+                    world.playSound(current, approach, 2.2f, 0.8f);
                     flashed = true;
+                }
+                if (tick % 6 == 0) {
+                    world.playSound(current, rumble, 1.4f, 0.6f);
+                    spawnMeteorBodyFragments(world, current, bodyRadius, bodyMaterials);
+                }
+                if (globalShake) {
+                    shakeTick++;
+                    if (shakeTick >= shakeInterval) {
+                        shakeTick = 0;
+                        applyFlightShake(center, shakeIntensity);
+                    }
                 }
                 tick++;
             }
@@ -324,15 +371,27 @@ public class MeteorController {
         if (world == null) {
             return;
         }
-        Sound impactSound = resolveSound(plugin.getConfig().getString("meteor.impact.sound", "ENTITY_GENERIC_EXPLODE"));
-        world.playSound(center, impactSound, 2.0f, 0.8f);
+        Sound landingSound = resolveSound(plugin.getConfig().getString("meteor.impact.landing-sound", "BLOCK_ANVIL_LAND"));
+        Sound explosionSound = resolveSound(plugin.getConfig().getString("meteor.impact.explosion-sound", "ENTITY_GENERIC_EXPLODE"));
+        Sound flashSound = resolveSound(plugin.getConfig().getString("meteor.impact.flash-sound", "ENTITY_LIGHTNING_BOLT_THUNDER"));
+
+        world.playSound(center, landingSound, 2.4f, 0.6f);
+        world.playSound(center, flashSound, 3.0f, 0.8f);
         startImpactEffects(center);
+        broadcastLoreMessage();
+
         float explosionPower = (float) plugin.getConfig().getDouble("meteor.impact.explosion-power", 4.0);
         boolean explosionFire = plugin.getConfig().getBoolean("meteor.impact.explosion-fire", false);
         boolean explosionBreakBlocks = plugin.getConfig().getBoolean("meteor.impact.explosion-break-blocks", false);
+        boolean forceBlockBreak = plugin.getConfig().getBoolean("meteor.impact.force-block-break", true);
         applyExplosion(center, explosionPower, explosionFire, explosionBreakBlocks);
+        if (forceBlockBreak && explosionBreakBlocks) {
+            breakBlocksInRadius(world, center, Math.max(1, Math.round(explosionPower * 2.2f)));
+        }
+        world.playSound(center, explosionSound, 2.4f, 0.7f);
 
         createCrater(center);
+        spawnImpactDebris(center, explosionPower);
         applyImpactShake(center);
         startSculkSpread(center, explosionPower);
         startRadiationTasks();
@@ -466,24 +525,211 @@ public class MeteorController {
         if (world == null) {
             return;
         }
-        int size = plugin.getConfig().getInt("meteor.impact.crater-size", 5);
-        int half = size / 2;
+        int size = plugin.getConfig().getInt("meteor.impact.crater-size", 40);
+        int depth = plugin.getConfig().getInt("meteor.impact.crater-depth", 52);
+        int rimHeight = plugin.getConfig().getInt("meteor.impact.crater-rim-height", 7);
+        int radius = Math.max(1, size / 2);
         List<Material> materials = resolveMaterials(
             plugin.getConfig().getStringList("meteor.impact.crater-materials"),
             List.of(Material.OBSIDIAN, Material.CRYING_OBSIDIAN)
         );
-        for (int x = -half; x <= half; x++) {
-            for (int z = -half; z <= half; z++) {
-                Block block = world.getBlockAt(center.getBlockX() + x, center.getBlockY(), center.getBlockZ() + z);
-                Material chosen = materials.get((int) (Math.random() * materials.size()));
-                block.setType(chosen, false);
+        int centerX = center.getBlockX();
+        int centerZ = center.getBlockZ();
+        int centerY = center.getBlockY();
+        int radiusSquared = radius * radius;
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                int distanceSquared = x * x + z * z;
+                if (distanceSquared > radiusSquared) {
+                    continue;
+                }
+                double distance = Math.sqrt(distanceSquared);
+                double depthScale = 1.0 - (distance / radius);
+                int carveDepth = Math.max(1, (int) Math.round(depth * depthScale));
+                int rimBoost = (int) Math.round(rimHeight * Math.max(0.0, (distance - radius * 0.65) / (radius * 0.35)));
+
+                int highestY = centerY + rimBoost;
+                for (int y = centerY; y >= centerY - carveDepth; y--) {
+                    Block block = world.getBlockAt(centerX + x, y, centerZ + z);
+                    if (block.getType() != Material.BEDROCK && block.getType() != Material.BARRIER) {
+                        block.setType(Material.AIR, false);
+                    }
+                }
+                for (int y = centerY; y <= highestY; y++) {
+                    Block block = world.getBlockAt(centerX + x, y, centerZ + z);
+                    Material chosen = materials.get((int) (Math.random() * materials.size()));
+                    block.setType(chosen, false);
+                }
             }
         }
         Material coreMaterial = resolveCoreMaterial();
-        Block coreBlock = world.getBlockAt(center.getBlockX(), center.getBlockY(), center.getBlockZ());
+        Block coreBlock = world.getBlockAt(centerX, centerY, centerZ);
         coreBlock.setType(coreMaterial, false);
         zone = zone.withCore(coreBlock.getLocation());
         storage.saveZone(zone.toStoredZone());
+    }
+
+    private void spawnImpactDebris(Location center, float explosionPower) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        int debrisRadius = plugin.getConfig().getInt("meteor.impact.debris-radius", 80);
+        int debrisCount = plugin.getConfig().getInt("meteor.impact.debris-count", 520);
+        int debrisMaxStack = plugin.getConfig().getInt("meteor.impact.debris-max-stack", 5);
+        int clusterCount = plugin.getConfig().getInt("meteor.impact.debris-cluster-count", 46);
+        int clusterRadius = plugin.getConfig().getInt("meteor.impact.debris-cluster-radius", 90);
+        int clusterSize = plugin.getConfig().getInt("meteor.impact.debris-cluster-size", 24);
+        int clusterHeight = plugin.getConfig().getInt("meteor.impact.debris-cluster-height", 5);
+        int burstCount = plugin.getConfig().getInt("meteor.impact.debris-burst-count", 320);
+        double burstRadius = plugin.getConfig().getDouble("meteor.impact.debris-burst-radius", 8.5);
+        double burstSpeed = plugin.getConfig().getDouble("meteor.impact.debris-burst-speed", 1.05);
+        double freeSpeedMultiplier = plugin.getConfig().getDouble("meteor.impact.free-debris-speed-multiplier", 1.9);
+        double freeScatter = plugin.getConfig().getDouble("meteor.impact.free-debris-scatter", 0.95);
+        int fireRadius = plugin.getConfig().getInt("meteor.impact.fire-radius", 20);
+        double fireChance = plugin.getConfig().getDouble("meteor.impact.fire-chance", 0.42);
+        int magmaChance = plugin.getConfig().getInt("meteor.impact.magma-chance-percent", 18);
+        List<Material> debrisMaterials = resolveMaterials(
+            plugin.getConfig().getStringList("meteor.impact.debris-materials"),
+            List.of(Material.OBSIDIAN, Material.CRYING_OBSIDIAN, Material.BLACKSTONE, Material.BASALT)
+        );
+
+        spawnDebrisBurst(world, center, debrisMaterials, burstCount, burstRadius, burstSpeed, freeSpeedMultiplier, freeScatter);
+        spawnDebrisClusters(world, center, debrisMaterials, clusterCount, clusterRadius, clusterSize, clusterHeight);
+        spawnDebrisScatter(world, center, debrisMaterials, debrisRadius, debrisCount, debrisMaxStack, magmaChance);
+        igniteFire(world, center, fireRadius, fireChance);
+        spawnImpactDust(world, center, explosionPower);
+    }
+
+    private void spawnDebrisBurst(
+        World world,
+        Location center,
+        List<Material> materials,
+        int count,
+        double radius,
+        double speed,
+        double speedMultiplier,
+        double scatter
+    ) {
+        if (count <= 0) {
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            Material material = pickRandom(materials);
+            Vector direction = randomUnitVector().multiply(speed * (0.7 + Math.random() * 0.6));
+            Location spawn = center.clone().add(
+                (Math.random() - 0.5) * radius * scatter,
+                Math.random() * 2.0,
+                (Math.random() - 0.5) * radius * scatter
+            );
+            FallingBlock block = world.spawnFallingBlock(spawn, material.createBlockData());
+            block.setDropItem(false);
+            block.setHurtEntities(true);
+            block.setVelocity(direction.multiply(speedMultiplier).setY(Math.abs(direction.getY()) + 0.4));
+        }
+    }
+
+    private void spawnDebrisClusters(
+        World world,
+        Location center,
+        List<Material> materials,
+        int clusterCount,
+        int clusterRadius,
+        int clusterSize,
+        int clusterHeight
+    ) {
+        if (clusterCount <= 0 || clusterSize <= 0) {
+            return;
+        }
+        int centerX = center.getBlockX();
+        int centerZ = center.getBlockZ();
+        for (int i = 0; i < clusterCount; i++) {
+            Vector offset = randomHorizontalOffset(clusterRadius);
+            int baseX = centerX + offset.getBlockX();
+            int baseZ = centerZ + offset.getBlockZ();
+            int highestY = world.getHighestBlockYAt(baseX, baseZ);
+            for (int j = 0; j < clusterSize; j++) {
+                int x = baseX + (int) Math.round((Math.random() - 0.5) * 6);
+                int z = baseZ + (int) Math.round((Math.random() - 0.5) * 6);
+                int y = highestY + (int) Math.round(Math.random() * clusterHeight);
+                Block block = world.getBlockAt(x, y, z);
+                if (block.getType().isAir()) {
+                    block.setType(pickRandom(materials), false);
+                }
+            }
+        }
+    }
+
+    private void spawnDebrisScatter(
+        World world,
+        Location center,
+        List<Material> materials,
+        int radius,
+        int count,
+        int maxStack,
+        int magmaChance
+    ) {
+        if (count <= 0) {
+            return;
+        }
+        int centerX = center.getBlockX();
+        int centerZ = center.getBlockZ();
+        for (int i = 0; i < count; i++) {
+            Vector offset = randomHorizontalOffset(radius);
+            int x = centerX + offset.getBlockX();
+            int z = centerZ + offset.getBlockZ();
+            int highestY = world.getHighestBlockYAt(x, z);
+            int stackHeight = 1 + (int) Math.round(Math.random() * maxStack);
+            for (int y = highestY; y < highestY + stackHeight; y++) {
+                Block block = world.getBlockAt(x, y, z);
+                if (!block.getType().isAir()) {
+                    continue;
+                }
+                Material chosen = pickRandom(materials);
+                if (magmaChance > 0 && Math.random() * 100 < magmaChance) {
+                    chosen = Material.MAGMA_BLOCK;
+                }
+                block.setType(chosen, false);
+            }
+        }
+    }
+
+    private void igniteFire(World world, Location center, int radius, double chance) {
+        if (radius <= 0 || chance <= 0) {
+            return;
+        }
+        int centerX = center.getBlockX();
+        int centerZ = center.getBlockZ();
+        int radiusSquared = radius * radius;
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                int distanceSquared = x * x + z * z;
+                if (distanceSquared > radiusSquared) {
+                    continue;
+                }
+                if (Math.random() > chance) {
+                    continue;
+                }
+                int blockX = centerX + x;
+                int blockZ = centerZ + z;
+                int y = world.getHighestBlockYAt(blockX, blockZ);
+                Block block = world.getBlockAt(blockX, y, blockZ);
+                Block above = block.getRelative(0, 1, 0);
+                if (block.getType().isSolid() && above.getType() == Material.AIR) {
+                    above.setType(Material.FIRE, false);
+                }
+            }
+        }
+    }
+
+    private void spawnImpactDust(World world, Location center, float explosionPower) {
+        Particle dust = resolveParticle("CAMPFIRE_COSY_SMOKE", "SMOKE_LARGE", "CLOUD");
+        if (dust == null) {
+            return;
+        }
+        int count = Math.max(40, Math.round(explosionPower * 14));
+        double radius = Math.max(6.0, explosionPower * 2.6);
+        world.spawnParticle(dust, center, count, radius, 1.5, radius, 0.08);
     }
 
     private void startRadiationTasks() {
@@ -851,6 +1097,48 @@ public class MeteorController {
         return location.distanceSquared(center) <= radius * radius;
     }
 
+    private void applyFlightShake(Location center, double intensity) {
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        double radius = plugin.getConfig().getDouble("meteor.flight.shake-radius", 120.0);
+        for (Player player : world.getPlayers()) {
+            if (!isWithinRadius(player.getLocation(), center, radius)) {
+                continue;
+            }
+            float yawJitter = (float) ((Math.random() - 0.5) * intensity);
+            float pitchJitter = (float) ((Math.random() - 0.5) * intensity);
+            Location view = player.getLocation().clone();
+            view.setYaw(view.getYaw() + yawJitter);
+            view.setPitch(Math.max(-89.9f, Math.min(89.9f, view.getPitch() + pitchJitter)));
+            player.teleport(view);
+        }
+    }
+
+    private void spawnMeteorBodyFragments(World world, Location location, int radius, List<Material> materials) {
+        if (materials.isEmpty() || radius <= 0) {
+            return;
+        }
+        Particle particle = resolveParticle("BLOCK_CRACK", "BLOCK");
+        if (particle == null) {
+            return;
+        }
+        for (int i = 0; i < radius * 6; i++) {
+            Material material = pickRandom(materials);
+            world.spawnParticle(
+                particle,
+                location,
+                2,
+                radius * 0.3,
+                radius * 0.2,
+                radius * 0.3,
+                0.03,
+                material.createBlockData()
+            );
+        }
+    }
+
     private void spawnTrail(World world, Location location, List<Particle> particles) {
         for (Particle particle : particles) {
             world.spawnParticle(particle, location, 12, 0.6, 0.6, 0.6, 0.05);
@@ -878,6 +1166,27 @@ public class MeteorController {
             }
         }
         return materials.isEmpty() ? fallback : materials;
+    }
+
+    private Vector randomHorizontalOffset(double radius) {
+        double angle = Math.random() * Math.PI * 2.0;
+        double length = radius * (0.4 + Math.random() * 0.6);
+        return new Vector(Math.cos(angle) * length, 0, Math.sin(angle) * length);
+    }
+
+    private Vector randomUnitVector() {
+        double x = (Math.random() - 0.5) * 2.0;
+        double y = Math.random();
+        double z = (Math.random() - 0.5) * 2.0;
+        Vector vector = new Vector(x, y, z);
+        if (vector.lengthSquared() == 0) {
+            return new Vector(0, 1, 0);
+        }
+        return vector.normalize();
+    }
+
+    private <T> T pickRandom(List<T> values) {
+        return values.get((int) (Math.random() * values.size()));
     }
 
     private List<Material> defaultGlassList() {
@@ -972,6 +1281,10 @@ public class MeteorController {
         if (meta != null) {
             String displayName = plugin.getConfig().getString("meteor.core.display-name", "§aРадиоактивный метеорит");
             meta.setDisplayName(displayName);
+            List<String> lore = plugin.getConfig().getStringList("meteor.core.lore");
+            if (!lore.isEmpty()) {
+                meta.setLore(lore);
+            }
             int model = plugin.getConfig().getInt("meteor.core.custom-model-data", 0);
             if (model > 0) {
                 meta.setCustomModelData(model);
