@@ -529,6 +529,8 @@ public class MeteorController {
         int size = plugin.getConfig().getInt("meteor.impact.crater-size", 40);
         int depth = plugin.getConfig().getInt("meteor.impact.crater-depth", 52);
         int rimHeight = plugin.getConfig().getInt("meteor.impact.crater-rim-height", 7);
+        int shellDepth = plugin.getConfig().getInt("meteor.impact.crater-shell-depth", 2);
+        double roughness = plugin.getConfig().getDouble("meteor.impact.crater-roughness", 0.12);
         int radius = Math.max(1, size / 2);
         List<Material> materials = resolveMaterials(
             plugin.getConfig().getStringList("meteor.impact.crater-materials"),
@@ -538,6 +540,7 @@ public class MeteorController {
         int centerZ = center.getBlockZ();
         int centerY = center.getBlockY();
         int radiusSquared = radius * radius;
+        java.util.Random random = new java.util.Random();
         for (int x = -radius; x <= radius; x++) {
             for (int z = -radius; z <= radius; z++) {
                 int distanceSquared = x * x + z * z;
@@ -546,20 +549,41 @@ public class MeteorController {
                 }
                 double distance = Math.sqrt(distanceSquared);
                 double depthScale = 1.0 - (distance / radius);
+                if (roughness > 0.0) {
+                    depthScale = Math.max(0.0, depthScale + (random.nextDouble() - 0.5) * 2.0 * roughness);
+                }
                 int carveDepth = Math.max(1, (int) Math.round(depth * depthScale));
-                int rimBoost = (int) Math.round(rimHeight * Math.max(0.0, (distance - radius * 0.65) / (radius * 0.35)));
+                double rimScale = Math.max(0.0, (distance - radius * 0.65) / (radius * 0.35));
+                if (roughness > 0.0 && rimScale > 0.0) {
+                    rimScale = Math.max(0.0, rimScale + (random.nextDouble() - 0.5) * roughness);
+                }
+                int rimBoost = (int) Math.round(rimHeight * rimScale);
 
-                int highestY = centerY + rimBoost;
-                for (int y = centerY; y >= centerY - carveDepth; y--) {
+                int floorY = centerY - carveDepth;
+                int craterShell = Math.max(1, Math.min(shellDepth, carveDepth));
+                int airBottomY = floorY + craterShell;
+                for (int y = centerY; y >= airBottomY; y--) {
                     Block block = world.getBlockAt(centerX + x, y, centerZ + z);
                     if (block.getType() != Material.BEDROCK && block.getType() != Material.BARRIER) {
                         block.setType(Material.AIR, false);
                     }
                 }
-                for (int y = centerY; y <= highestY; y++) {
+                for (int y = floorY; y < airBottomY; y++) {
                     Block block = world.getBlockAt(centerX + x, y, centerZ + z);
-                    Material chosen = materials.get((int) (Math.random() * materials.size()));
-                    block.setType(chosen, false);
+                    if (block.getType() != Material.BEDROCK && block.getType() != Material.BARRIER) {
+                        Material chosen = materials.get((int) (Math.random() * materials.size()));
+                        block.setType(chosen, false);
+                    }
+                }
+                if (rimBoost > 0) {
+                    int highestY = centerY + rimBoost;
+                    for (int y = centerY; y <= highestY; y++) {
+                        Block block = world.getBlockAt(centerX + x, y, centerZ + z);
+                        if (block.getType() != Material.BEDROCK && block.getType() != Material.BARRIER) {
+                            Material chosen = materials.get((int) (Math.random() * materials.size()));
+                            block.setType(chosen, false);
+                        }
+                    }
                 }
             }
         }
