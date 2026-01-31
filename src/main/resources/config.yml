@@ -55,6 +55,8 @@ meteor:
     crater-size: 40
     crater-depth: 52
     crater-rim-height: 7
+    crater-shell-depth: 2
+    crater-roughness: 0.12
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
