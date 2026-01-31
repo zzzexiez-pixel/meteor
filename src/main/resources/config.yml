@@ -14,6 +14,9 @@ meteor:
     body-radius: 2.1
     horizontal-offset: 32.0
     free-horizontal-offset: 52.0
+    global-shake: true
+    shake-interval-ticks: 6
+    shake-intensity: 2.6
     body-materials:
       - "MAGMA_BLOCK"
       - "CRYING_OBSIDIAN"
@@ -33,19 +36,19 @@ meteor:
     landing-sound: "BLOCK_ANVIL_LAND"
     explosion-sound: "ENTITY_GENERIC_EXPLODE"
     flash-sound: "ENTITY_LIGHTNING_BOLT_THUNDER"
-    explosion-power: 14.0
+    explosion-power: 22.0
     explosion-fire: true
     explosion-break-blocks: true
     force-block-break: true
-    flash-count: 8
-    flash-radius: 60.0
-    flash-blindness-ticks: 20
-    shockwave-radius: 18.0
-    shockwave-steps: 12
-    shockwave-points: 40
-    crater-size: 28
-    crater-depth: 36
-    crater-rim-height: 5
+    flash-count: 12
+    flash-radius: 75.0
+    flash-blindness-ticks: 28
+    shockwave-radius: 26.0
+    shockwave-steps: 16
+    shockwave-points: 54
+    crater-size: 40
+    crater-depth: 52
+    crater-rim-height: 7
     crater-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -53,13 +56,13 @@ meteor:
       - "BLACKSTONE"
       - "BASALT"
       - "DEEPSLATE"
-    debris-radius: 55
-    debris-count: 220
-    debris-max-stack: 3
-    debris-cluster-count: 22
-    debris-cluster-radius: 60
-    debris-cluster-size: 14
-    debris-cluster-height: 3
+    debris-radius: 80
+    debris-count: 360
+    debris-max-stack: 4
+    debris-cluster-count: 32
+    debris-cluster-radius: 90
+    debris-cluster-size: 18
+    debris-cluster-height: 4
     debris-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -68,39 +71,43 @@ meteor:
       - "NETHERRACK"
       - "BASALT"
       - "TUFF"
-    debris-burst-count: 120
-    debris-burst-radius: 6.0
-    debris-burst-speed: 0.65
-    free-debris-speed-multiplier: 1.4
-    free-debris-scatter: 0.75
-    fire-radius: 14
-    fire-chance: 0.35
-    magma-chance-percent: 12
-    shake-radius: 50.0
-    shake-duration-ticks: 60
-    shake-intensity: 6.0
+    debris-burst-count: 200
+    debris-burst-radius: 7.5
+    debris-burst-speed: 0.9
+    free-debris-speed-multiplier: 1.7
+    free-debris-scatter: 0.85
+    fire-radius: 20
+    fire-chance: 0.42
+    magma-chance-percent: 18
+    global-shake: true
+    shake-radius: 80.0
+    shake-duration-ticks: 90
+    shake-intensity: 8.0
 
   core:
     display-name: "§aРадиоактивный метеорит"
-    block-material: "CRYING_OBSIDIAN"
+    block-material: "BEDROCK"
     custom-model-data: 0
+    radiation-emission-count: 18
+    radiation-emission-radius: 1.4
     radiation-particles:
       - "END_ROD"
       - "PORTAL"
 
   radiation:
-    radius: 40.0
-    progression-seconds: 20
-    damage-half-heart-interval: 5
+    radius: 55.0
+    progression-seconds: 18
+    damage-half-heart-interval: 4
     damage-heart-interval: 3
     sculk:
       enabled: true
       min-explosion-power: 6.0
-      start-radius: 12
-      max-radius: 40
-      grow-duration-seconds: 600
-      blocks-per-step: 12
-      interval-seconds: 6
+      start-radius: 18
+      max-radius: 65
+      grow-duration-seconds: 900
+      blocks-per-step: 20
+      interval-seconds: 5
+      replace-any-surface: true
       replaceable-blocks:
         - "STONE"
         - "DEEPSLATE"

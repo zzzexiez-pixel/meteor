@@ -8,8 +8,6 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -60,16 +58,17 @@ public class RadiationZone {
                 int fullHeartInterval = config.getInt("meteor.radiation.damage-heart-interval", 3);
                 Sound hiss = ConfigHelper.safeSound("BLOCK_SCULK_SENSOR_CLICKING", Sound.BLOCK_SCULK_SENSOR_CLICKING);
                 List<Particle> particles = ConfigHelper.readParticles(config, "meteor.core.radiation-particles");
+                int coreEmissionCount = Math.max(1, config.getInt("meteor.core.radiation-emission-count", 18));
+                double coreEmissionRadius = config.getDouble("meteor.core.radiation-emission-radius", 1.4);
                 PotionEffectType nausea = ConfigHelper.safePotionEffectType("NAUSEA", "CONFUSION");
+
+                for (Particle particle : particles) {
+                    world.spawnParticle(particle, origin, coreEmissionCount, coreEmissionRadius, 0.8, coreEmissionRadius, 0.02);
+                }
 
                 for (Player player : world.getPlayers()) {
                     double distanceSq = player.getLocation().distanceSquared(origin);
                     if (distanceSq > radius * radius) {
-                        continue;
-                    }
-                    boolean protectedByLeather = applyLeatherProtection(player);
-                    if (protectedByLeather) {
-                        player.spawnParticle(Particle.SPORE_BLOSSOM_AIR, player.getLocation(), 6, 0.5, 0.8, 0.5, 0.01);
                         continue;
                     }
                     if (nausea != null) {
@@ -97,17 +96,20 @@ public class RadiationZone {
 
     private void spreadSculk(World world, double radius) {
         int blocksPerStep = config.getInt("meteor.radiation.sculk.blocks-per-step", 6);
-        List<String> replaceable = config.getStringList("meteor.radiation.sculk.replaceable-blocks");
+        boolean replaceAnySurface = config.getBoolean("meteor.radiation.sculk.replace-any-surface", true);
         List<Material> replaceableMaterials = new ArrayList<>();
-        for (String material : replaceable) {
-            try {
-                replaceableMaterials.add(Material.valueOf(material));
-            } catch (IllegalArgumentException ignored) {
-                // ignore
+        if (!replaceAnySurface) {
+            List<String> replaceable = config.getStringList("meteor.radiation.sculk.replaceable-blocks");
+            for (String material : replaceable) {
+                try {
+                    replaceableMaterials.add(Material.valueOf(material));
+                } catch (IllegalArgumentException ignored) {
+                    // ignore
+                }
             }
-        }
-        if (replaceableMaterials.isEmpty()) {
-            replaceableMaterials.add(Material.STONE);
+            if (replaceableMaterials.isEmpty()) {
+                replaceableMaterials.add(Material.STONE);
+            }
         }
 
         for (int i = 0; i < blocksPerStep; i++) {
@@ -120,7 +122,12 @@ public class RadiationZone {
                 continue;
             }
             var block = world.getBlockAt(x, y - 1, z);
-            if (!replaceableMaterials.contains(block.getType())) {
+            if (replaceAnySurface) {
+                Material surface = block.getType();
+                if (surface.isAir() || surface == Material.BEDROCK || surface == Material.SCULK) {
+                    continue;
+                }
+            } else if (!replaceableMaterials.contains(block.getType())) {
                 continue;
             }
             block.setType(Material.SCULK);
@@ -144,55 +151,6 @@ public class RadiationZone {
             task.cancel();
             task = null;
         }
-    }
-
-    private boolean applyLeatherProtection(Player player) {
-        ItemStack[] armor = player.getInventory().getArmorContents();
-        if (!hasFullLeatherSet(armor)) {
-            return false;
-        }
-        for (int i = 0; i < armor.length; i++) {
-            ItemStack item = armor[i];
-            if (item == null || item.getType().isAir()) {
-                continue;
-            }
-            Damageable meta = item.hasItemMeta() && item.getItemMeta() instanceof Damageable damageable ? damageable : null;
-            if (meta == null) {
-                continue;
-            }
-            int newDamage = meta.getDamage() + 1;
-            if (newDamage >= item.getType().getMaxDurability()) {
-                armor[i] = new ItemStack(Material.AIR);
-            } else {
-                meta.setDamage(newDamage);
-                item.setItemMeta(meta);
-                armor[i] = item;
-            }
-        }
-        player.getInventory().setArmorContents(armor);
-        return true;
-    }
-
-    private boolean hasFullLeatherSet(ItemStack[] armor) {
-        if (armor == null || armor.length < 4) {
-            return false;
-        }
-        for (ItemStack item : armor) {
-            if (item == null || item.getType().isAir()) {
-                return false;
-            }
-            if (!isLeatherArmor(item.getType())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isLeatherArmor(Material material) {
-        return switch (material) {
-            case LEATHER_HELMET, LEATHER_CHESTPLATE, LEATHER_LEGGINGS, LEATHER_BOOTS -> true;
-            default -> false;
-        };
     }
 
     private boolean shouldCheckDome() {
