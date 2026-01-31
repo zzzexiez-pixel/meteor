@@ -12,6 +12,8 @@ meteor:
     height: 200
     duration-seconds: 10
     body-radius: 2.1
+    horizontal-offset: 32.0
+    free-horizontal-offset: 52.0
     body-materials:
       - "MAGMA_BLOCK"
       - "CRYING_OBSIDIAN"
@@ -69,6 +71,8 @@ meteor:
     debris-burst-count: 120
     debris-burst-radius: 6.0
     debris-burst-speed: 0.65
+    free-debris-speed-multiplier: 1.4
+    free-debris-scatter: 0.75
     fire-radius: 14
     fire-chance: 0.35
     magma-chance-percent: 12

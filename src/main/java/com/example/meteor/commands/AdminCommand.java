@@ -19,7 +19,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage("§cИспользование: /admin meteor <start|stop> [x] [z] | /admin meteor start free [x] [z]");
+            sender.sendMessage("§cИспользование: /admin meteor <start|stop|free> [x] [z] | /admin meteor start free [x] [z]");
             return true;
         }
         if (!args[0].equalsIgnoreCase("meteor")) {
@@ -48,11 +48,25 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
                 }
                 meteorManager.startMeteor(sender, x, z, immediate);
             }
+            case "free" -> {
+                Integer x = null;
+                Integer z = null;
+                if (args.length >= 4) {
+                    try {
+                        x = Integer.parseInt(args[2]);
+                        z = Integer.parseInt(args[3]);
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage("§cКоординаты должны быть числами.");
+                        return true;
+                    }
+                }
+                meteorManager.startMeteor(sender, x, z, true);
+            }
             case "stop" -> {
                 meteorManager.stopMeteor();
                 sender.sendMessage("§eМетеорит остановлен.");
             }
-            default -> sender.sendMessage("§cИспользование: /admin meteor <start|stop> [x] [z] | /admin meteor start free [x] [z]");
+            default -> sender.sendMessage("§cИспользование: /admin meteor <start|stop|free> [x] [z] | /admin meteor start free [x] [z]");
         }
         return true;
     }
@@ -64,6 +78,7 @@ public class AdminCommand implements CommandExecutor, TabCompleter {
             suggestions.add("meteor");
         } else if (args.length == 2 && args[0].equalsIgnoreCase("meteor")) {
             suggestions.add("start");
+            suggestions.add("free");
             suggestions.add("stop");
         } else if (args.length == 3 && args[0].equalsIgnoreCase("meteor") && args[1].equalsIgnoreCase("start")) {
             suggestions.add("free");

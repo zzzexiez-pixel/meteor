@@ -25,6 +25,7 @@ public class MeteorManager {
     private RadiationZone radiationZone;
     private Location impactLocation;
     private boolean running;
+    private boolean freeLaunch;
 
     public MeteorManager(Plugin plugin, ResearchRepository researchRepository) {
         this.plugin = plugin;
@@ -61,6 +62,7 @@ public class MeteorManager {
         int targetY = world.getHighestBlockYAt(targetX, targetZ) + 1;
         impactLocation = new Location(world, targetX + 0.5, targetY, targetZ + 0.5);
         running = true;
+        freeLaunch = immediate;
 
         FileConfiguration config = plugin.getConfig();
         int countdownMinutes = config.getInt("meteor.countdown-minutes", 60);
@@ -110,6 +112,7 @@ public class MeteorManager {
 
     public void stopMeteor() {
         running = false;
+        freeLaunch = false;
         if (countdownTask != null) {
             countdownTask.cancel();
             countdownTask = null;
@@ -134,6 +137,8 @@ public class MeteorManager {
         int height = config.getInt("meteor.flight.height", 200);
         int durationSeconds = config.getInt("meteor.flight.duration-seconds", 10);
         double bodyRadius = config.getDouble("meteor.flight.body-radius", 2.1);
+        double baseHorizontalOffset = config.getDouble("meteor.flight.horizontal-offset", 32.0);
+        double freeHorizontalOffset = config.getDouble("meteor.flight.free-horizontal-offset", 52.0);
         List<Particle> trailParticles = ConfigHelper.readParticles(config, "meteor.flight.trail-particles");
         List<Material> bodyMaterials = readMaterials(config.getStringList("meteor.flight.body-materials"), List.of(Material.MAGMA_BLOCK));
         Sound whistle = ConfigHelper.safeSound(config.getString("meteor.flight.whistle-sound"), Sound.ENTITY_ARROW_SHOOT);
@@ -141,7 +146,14 @@ public class MeteorManager {
         Sound approach = ConfigHelper.safeSound(config.getString("meteor.flight.approach-sound"), Sound.ENTITY_GHAST_SHOOT);
         double startY = impactLocation.getY() + height;
         Location start = impactLocation.clone();
-        start.set(impactLocation.getX(), startY, impactLocation.getZ());
+        double horizontalOffset = freeLaunch ? freeHorizontalOffset : baseHorizontalOffset;
+        if (horizontalOffset > 0.1) {
+            double angle = Math.random() * Math.PI * 2;
+            double offsetX = Math.cos(angle) * horizontalOffset;
+            double offsetZ = Math.sin(angle) * horizontalOffset;
+            start.add(offsetX, 0, offsetZ);
+        }
+        start.set(start.getX(), startY, start.getZ());
 
         List<Vector> meteorOffsets = buildMeteorOffsets(bodyRadius);
         List<ArmorStand> meteorPieces = spawnMeteorPieces(world, start, meteorOffsets, bodyMaterials);
@@ -151,7 +163,7 @@ public class MeteorManager {
         }
 
         double totalTicks = durationSeconds * 20.0;
-        Vector step = new Vector(0, -(height / totalTicks), 0);
+        Vector step = impactLocation.toVector().subtract(start.toVector()).multiply(1.0 / totalTicks);
 
         flightTask = new BukkitRunnable() {
             int tick = 0;
@@ -198,6 +210,7 @@ public class MeteorManager {
                 }
                 spawnFlightSpiral(world, base, tick);
                 spawnFlightAura(world, base, tick, bodyRadius);
+                spawnFlightEmbers(world, base, bodyRadius);
                 world.spawnParticle(Particle.LAVA, base, 10, bodyRadius * 0.2, bodyRadius * 0.2, bodyRadius * 0.2, 0.02);
                 tick++;
             }
@@ -224,6 +237,7 @@ public class MeteorManager {
         world.playSound(impactLocation, impactSound, 4.0f, 0.6f);
         world.playSound(impactLocation, explosionSound, 5.0f, 0.5f);
         applyExplosion(world, explosionPower, explosionFire, explosionBreak, forceBlockBreak);
+        spawnImpactResidue(world);
 
         int flashCount = config.getInt("meteor.impact.flash-count", 8);
         double flashRadius = config.getDouble("meteor.impact.flash-radius", 60.0);
@@ -253,7 +267,7 @@ public class MeteorManager {
         triggerShockwave(config, world);
         createCrater(config, world);
         igniteCraterRim(config, world);
-        launchDebrisBurst(config, world);
+        launchDebrisBurst(config, world, freeLaunch);
         shakePlayers(config, world);
         applyScreenShake(config, world);
 
@@ -472,10 +486,12 @@ public class MeteorManager {
         }
     }
 
-    private void launchDebrisBurst(FileConfiguration config, World world) {
+    private void launchDebrisBurst(FileConfiguration config, World world, boolean freeLaunch) {
         int burstCount = config.getInt("meteor.impact.debris-burst-count", 80);
         double burstRadius = config.getDouble("meteor.impact.debris-burst-radius", 6.0);
         double burstSpeed = config.getDouble("meteor.impact.debris-burst-speed", 0.65);
+        double freeSpeedMultiplier = config.getDouble("meteor.impact.free-debris-speed-multiplier", 1.4);
+        double freeScatter = config.getDouble("meteor.impact.free-debris-scatter", 0.75);
         List<Material> materials = readMaterials(
             config.getStringList("meteor.impact.debris-materials"),
             List.of(Material.COBBLED_DEEPSLATE, Material.BLACKSTONE)
@@ -494,8 +510,17 @@ public class MeteorManager {
             Material material = materials.get(random.nextInt(materials.size()));
             var falling = world.spawnFallingBlock(spawn, material.createBlockData());
             falling.setDropItem(false);
-            Vector velocity = spawn.toVector().subtract(impactLocation.toVector()).normalize().multiply(burstSpeed);
-            velocity.setY(0.45 + random.nextDouble() * 0.6);
+            Vector velocity = spawn.toVector().subtract(impactLocation.toVector()).normalize();
+            if (freeLaunch) {
+                Vector scatter = new Vector(random.nextDouble() - 0.5, 0, random.nextDouble() - 0.5);
+                if (scatter.lengthSquared() < 0.0001) {
+                    scatter = new Vector(1, 0, 0);
+                }
+                scatter.normalize();
+                velocity = velocity.add(scatter.multiply(freeScatter)).normalize();
+            }
+            velocity = velocity.multiply(burstSpeed * (freeLaunch ? freeSpeedMultiplier : 1.0));
+            velocity.setY(0.45 + random.nextDouble() * (freeLaunch ? 0.9 : 0.6));
             falling.setVelocity(velocity);
         }
         world.spawnParticle(Particle.EXPLOSION, impactLocation, 6, 2.0, 1.0, 2.0, 0.02);
@@ -625,6 +650,18 @@ public class MeteorManager {
             world.spawnParticle(Particle.DRAGON_BREATH, aura, 4, 0.1, 0.1, 0.1, 0.01);
             world.spawnParticle(Particle.SMOKE, aura, 6, 0.12, 0.12, 0.12, 0.02);
         }
+    }
+
+    private void spawnFlightEmbers(World world, Location current, double bodyRadius) {
+        world.spawnParticle(Particle.ASH, current, 12, bodyRadius * 0.4, bodyRadius * 0.2, bodyRadius * 0.4, 0.01);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, current, 8, bodyRadius * 0.3, bodyRadius * 0.3, bodyRadius * 0.3, 0.01);
+        world.spawnParticle(Particle.SMOKE_LARGE, current, 6, bodyRadius * 0.3, bodyRadius * 0.2, bodyRadius * 0.3, 0.02);
+    }
+
+    private void spawnImpactResidue(World world) {
+        world.spawnParticle(Particle.SMOKE_LARGE, impactLocation, 80, 3.5, 1.2, 3.5, 0.02);
+        world.spawnParticle(Particle.ASH, impactLocation, 120, 4.0, 1.0, 4.0, 0.01);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 50, 2.5, 0.8, 2.5, 0.02);
     }
 
     private List<Vector> buildMeteorOffsets(double bodyRadius) {
