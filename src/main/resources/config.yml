@@ -57,12 +57,12 @@ meteor:
       - "BASALT"
       - "DEEPSLATE"
     debris-radius: 80
-    debris-count: 360
-    debris-max-stack: 4
-    debris-cluster-count: 32
+    debris-count: 520
+    debris-max-stack: 5
+    debris-cluster-count: 46
     debris-cluster-radius: 90
-    debris-cluster-size: 18
-    debris-cluster-height: 4
+    debris-cluster-size: 24
+    debris-cluster-height: 5
     debris-materials:
       - "OBSIDIAN"
       - "CRYING_OBSIDIAN"
@@ -71,11 +71,11 @@ meteor:
       - "NETHERRACK"
       - "BASALT"
       - "TUFF"
-    debris-burst-count: 200
-    debris-burst-radius: 7.5
-    debris-burst-speed: 0.9
-    free-debris-speed-multiplier: 1.7
-    free-debris-scatter: 0.85
+    debris-burst-count: 320
+    debris-burst-radius: 8.5
+    debris-burst-speed: 1.05
+    free-debris-speed-multiplier: 1.9
+    free-debris-scatter: 0.95
     fire-radius: 20
     fire-chance: 0.42
     magma-chance-percent: 18
@@ -107,6 +107,10 @@ meteor:
       grow-duration-seconds: 900
       blocks-per-step: 20
       interval-seconds: 5
+      initial-burst-steps: 8
+      initial-radius: 22
+      ignite-on-step: true
+      ignite-ticks: 70
       replace-any-surface: true
       replaceable-blocks:
         - "STONE"

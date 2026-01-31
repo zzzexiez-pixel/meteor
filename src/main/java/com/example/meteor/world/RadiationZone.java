@@ -46,6 +46,9 @@ public class RadiationZone {
                     cancel();
                     return;
                 }
+                if (elapsedSeconds == 0 && config.getBoolean("meteor.radiation.sculk.enabled", true)) {
+                    seedInitialSculk(world);
+                }
                 if (shouldCheckDome()) {
                     domeStable = isDomeComplete(world);
                 }
@@ -66,6 +69,8 @@ public class RadiationZone {
                     world.spawnParticle(particle, origin, coreEmissionCount, coreEmissionRadius, 0.8, coreEmissionRadius, 0.02);
                 }
 
+                boolean igniteOnStep = config.getBoolean("meteor.radiation.sculk.ignite-on-step", true);
+                int igniteTicks = Math.max(0, config.getInt("meteor.radiation.sculk.ignite-ticks", 60));
                 for (Player player : world.getPlayers()) {
                     double distanceSq = player.getLocation().distanceSquared(origin);
                     if (distanceSq > radius * radius) {
@@ -73,6 +78,9 @@ public class RadiationZone {
                     }
                     if (nausea != null) {
                         player.addPotionEffect(new PotionEffect(nausea, 60, 0, true, true, true));
+                    }
+                    if (igniteOnStep) {
+                        applySculkIgnition(world, player, igniteTicks);
                     }
                     player.spawnParticle(Particle.SPORE_BLOSSOM_AIR, player.getLocation(), 12, 0.7, 1.2, 0.7, 0.02);
                     for (Particle particle : particles) {
@@ -92,6 +100,14 @@ public class RadiationZone {
             }
         };
         task.runTaskTimer(plugin, 0L, 20L);
+    }
+
+    private void seedInitialSculk(World world) {
+        int bursts = Math.max(1, config.getInt("meteor.radiation.sculk.initial-burst-steps", 6));
+        double radius = config.getDouble("meteor.radiation.sculk.initial-radius", calculateSculkRadius());
+        for (int i = 0; i < bursts; i++) {
+            spreadSculk(world, radius);
+        }
     }
 
     private void spreadSculk(World world, double radius) {
@@ -133,6 +149,23 @@ public class RadiationZone {
             block.setType(Material.SCULK);
             world.spawnParticle(Particle.SCULK_SOUL, block.getLocation().add(0.5, 1.0, 0.5), 6, 0.3, 0.4, 0.3, 0.01);
         }
+    }
+
+    private void applySculkIgnition(World world, Player player, int igniteTicks) {
+        if (igniteTicks <= 0 || player.getFireTicks() > 0) {
+            return;
+        }
+        Location location = player.getLocation();
+        if (location.getWorld() == null || !location.getWorld().equals(world)) {
+            return;
+        }
+        Material below = location.getBlock().getRelative(0, -1, 0).getType();
+        if (below != Material.SCULK) {
+            return;
+        }
+        player.setFireTicks(igniteTicks);
+        player.spawnParticle(Particle.SOUL_FIRE_FLAME, location, 12, 0.3, 0.4, 0.3, 0.02);
+        player.playSound(location, Sound.ENTITY_BLAZE_HURT, 0.7f, 1.4f);
     }
 
     private double calculateSculkRadius() {

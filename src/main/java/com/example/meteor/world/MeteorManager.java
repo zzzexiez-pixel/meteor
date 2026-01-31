@@ -530,10 +530,12 @@ public class MeteorManager {
             velocity.setY(0.45 + random.nextDouble() * (freeLaunch ? 0.9 : 0.6));
             falling.setVelocity(velocity);
         }
-        world.spawnParticle(Particle.EXPLOSION, impactLocation, 6, 2.0, 1.0, 2.0, 0.02);
-        world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, impactLocation, 18, 2.0, 1.2, 2.0, 0.01);
-        world.spawnParticle(Particle.FLAME, impactLocation, 26, 2.4, 1.2, 2.4, 0.04);
-        world.spawnParticle(Particle.LAVA, impactLocation, 16, 1.6, 0.8, 1.6, 0.03);
+        world.spawnParticle(Particle.EXPLOSION, impactLocation, 8, 2.4, 1.2, 2.4, 0.02);
+        world.spawnParticle(Particle.CAMPFIRE_SIGNAL_SMOKE, impactLocation, 24, 2.2, 1.3, 2.2, 0.01);
+        world.spawnParticle(Particle.FLAME, impactLocation, 32, 2.8, 1.4, 2.8, 0.04);
+        world.spawnParticle(Particle.LAVA, impactLocation, 22, 1.8, 0.9, 1.8, 0.03);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 18, 2.1, 0.9, 2.1, 0.02);
+        world.spawnParticle(Particle.DRAGON_BREATH, impactLocation, 16, 2.6, 1.2, 2.6, 0.02);
     }
 
     private void igniteCraterRim(FileConfiguration config, World world) {
@@ -609,7 +611,7 @@ public class MeteorManager {
                     float pitchJitter = (float) ((Math.random() - 0.5) * intensity);
                     view.setYaw(view.getYaw() + yawJitter);
                     view.setPitch(Math.max(-89.9f, Math.min(89.9f, view.getPitch() + pitchJitter)));
-                    player.teleport(view);
+                    player.setRotation(view.getYaw(), view.getPitch());
                 }
                 tick += 2;
                 if (tick >= duration) {
@@ -677,12 +679,14 @@ public class MeteorManager {
     private void spawnImpactResidue(World world) {
         Particle smoke = resolveParticle("SMOKE_LARGE", "LARGE_SMOKE", "SMOKE_NORMAL", "SMOKE");
         if (smoke != null) {
-            world.spawnParticle(smoke, impactLocation, 140, 4.2, 1.6, 4.2, 0.03);
+            world.spawnParticle(smoke, impactLocation, 160, 4.4, 1.7, 4.4, 0.03);
         }
-        world.spawnParticle(Particle.ASH, impactLocation, 200, 4.8, 1.2, 4.8, 0.02);
-        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 90, 3.0, 1.0, 3.0, 0.03);
-        world.spawnParticle(Particle.FLAME, impactLocation, 120, 3.4, 1.1, 3.4, 0.04);
-        world.spawnParticle(Particle.LAVA, impactLocation, 70, 2.8, 0.6, 2.8, 0.02);
+        world.spawnParticle(Particle.ASH, impactLocation, 240, 5.2, 1.4, 5.2, 0.02);
+        world.spawnParticle(Particle.SOUL_FIRE_FLAME, impactLocation, 110, 3.2, 1.1, 3.2, 0.03);
+        world.spawnParticle(Particle.FLAME, impactLocation, 150, 3.6, 1.2, 3.6, 0.04);
+        world.spawnParticle(Particle.LAVA, impactLocation, 90, 3.0, 0.7, 3.0, 0.02);
+        world.spawnParticle(Particle.DRAGON_BREATH, impactLocation, 70, 3.2, 1.0, 3.2, 0.02);
+        world.spawnParticle(Particle.PORTAL, impactLocation, 90, 3.6, 1.4, 3.6, 0.02);
     }
 
     private void applyApproachShake(World world, double intensity) {
@@ -692,7 +696,7 @@ public class MeteorManager {
             float pitchJitter = (float) ((Math.random() - 0.5) * intensity);
             view.setYaw(view.getYaw() + yawJitter);
             view.setPitch(Math.max(-89.9f, Math.min(89.9f, view.getPitch() + pitchJitter)));
-            player.teleport(view);
+            player.setRotation(view.getYaw(), view.getPitch());
             player.spawnParticle(Particle.ASH, player.getLocation(), 6, 0.3, 0.3, 0.3, 0.01);
         }
     }
