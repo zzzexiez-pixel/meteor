@@ -145,6 +145,10 @@ public class MeteorManager {
 
         List<Vector> meteorOffsets = buildMeteorOffsets(bodyRadius);
         List<ArmorStand> meteorPieces = spawnMeteorPieces(world, start, meteorOffsets, bodyMaterials);
+        if (meteorPieces.isEmpty()) {
+            impact();
+            return;
+        }
 
         double totalTicks = durationSeconds * 20.0;
         Vector step = new Vector(0, -(height / totalTicks), 0);
@@ -155,15 +159,21 @@ public class MeteorManager {
 
             @Override
             public void run() {
-                if (!running || meteorPieces.isEmpty()) {
+                if (!running) {
                     removeMeteorPieces(meteorPieces);
                     cancel();
+                    return;
+                }
+                if (meteorPieces.isEmpty()) {
+                    cancel();
+                    impact();
                     return;
                 }
                 for (ArmorStand piece : meteorPieces) {
                     if (piece.isDead()) {
                         removeMeteorPieces(meteorPieces);
                         cancel();
+                        impact();
                         return;
                     }
                 }
